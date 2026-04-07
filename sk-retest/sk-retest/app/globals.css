@@ -1,6 +1,0 @@
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif; background: #F8FAFF; color: #0F172A; }
-input, textarea, select { font-family: inherit; font-size: 15px; border: 1.5px solid #DBEAFE; border-radius: 10px; padding: 11px 14px; width: 100%; outline: none; transition: border-color .15s; }
-input:focus, textarea:focus { border-color: #1A56DB; }
-button { font-family: inherit; cursor: pointer; }
-a { color: inherit; }

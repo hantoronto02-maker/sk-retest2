@@ -185,52 +185,39 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
 
   const completed = exam ? exam.questions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length : 0;
 
-  function handleStart() {
+  async function handleStart() {
     const found = exams.find(e => e.code === code.trim().toUpperCase());
     if (!name.trim()) { setError('이름을 입력하세요.'); return; }
     if (!found) { setError(`"${code}" 코드의 시험을 찾을 수 없습니다.`); return; }
-    // 중복 제출은 제출 시점에 서버에서 체크
+
+    // 서버에서 중복 제출 확인
+    const res = await fetch(`/api/results?examCode=${found.code}`);
+    const results = await res.json();
+    const already = results.find((r: Result) => r.student_name === name.trim());
+    if (already) { setExam(found); setStep('already'); return; }
+
     setExam(found); setStep('test'); setError('');
   }
 
   async function handleSubmit() {
     if (!exam) return;
     setSubmitting(true);
-    try {
-      const r = gradeAnswers(exam.questions, answers);
-      const finalResult = { ...r, passed: r.total >= exam.passing_score };
+    const r = gradeAnswers(exam.questions, answers);
+    const finalResult = { ...r, passed: r.total >= exam.passing_score };
 
-      // 서버에 결과 저장
-      const res = await fetch('/api/results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          exam_code: exam.code,
-          student_name: name.trim(),
-          total: finalResult.total,
-          max_score: finalResult.maxScore,
-          passed: finalResult.passed,
-          details: finalResult.details,
-        }),
-      });
+    // 서버에 결과 저장
+    const res = await fetch('/api/results', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ exam_code: exam.code, student_name: name.trim(), ...finalResult }),
+    });
 
-      if (res.status === 409) {
-        setStep('already'); setSubmitting(false); return;
-      }
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        console.error('결과 저장 오류:', errData);
-        alert(`결과 저장 오류: ${errData.error || res.status}`);
-        setSubmitting(false); return;
-      }
-
-      setResult(finalResult);
-      setStep('result');
-    } catch (err: any) {
-      console.error('제출 오류:', err);
-      alert(`제출 중 오류 발생: ${err.message}`);
+    if (res.status === 409) {
+      setStep('already'); setSubmitting(false); return;
     }
+
+    setResult(finalResult);
+    setStep('result');
     setSubmitting(false);
   }
 

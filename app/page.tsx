@@ -185,17 +185,11 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
 
   const completed = exam ? exam.questions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length : 0;
 
-  async function handleStart() {
+  function handleStart() {
     const found = exams.find(e => e.code === code.trim().toUpperCase());
     if (!name.trim()) { setError('이름을 입력하세요.'); return; }
     if (!found) { setError(`"${code}" 코드의 시험을 찾을 수 없습니다.`); return; }
-
-    // 서버에서 중복 제출 확인
-    const res = await fetch(`/api/results?examCode=${found.code}`);
-    const results = await res.json();
-    const already = results.find((r: Result) => r.student_name === name.trim());
-    if (already) { setExam(found); setStep('already'); return; }
-
+    // 중복 제출은 제출 시점에 서버에서 체크
     setExam(found); setStep('test'); setError('');
   }
 

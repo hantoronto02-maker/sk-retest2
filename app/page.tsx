@@ -196,22 +196,41 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   async function handleSubmit() {
     if (!exam) return;
     setSubmitting(true);
-    const r = gradeAnswers(exam.questions, answers);
-    const finalResult = { ...r, passed: r.total >= exam.passing_score };
+    try {
+      const r = gradeAnswers(exam.questions, answers);
+      const finalResult = { ...r, passed: r.total >= exam.passing_score };
 
-    // 서버에 결과 저장
-    const res = await fetch('/api/results', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exam_code: exam.code, student_name: name.trim(), ...finalResult }),
-    });
+      // 서버에 결과 저장
+      const res = await fetch('/api/results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          exam_code: exam.code,
+          student_name: name.trim(),
+          total: finalResult.total,
+          max_score: finalResult.maxScore,
+          passed: finalResult.passed,
+          details: finalResult.details,
+        }),
+      });
 
-    if (res.status === 409) {
-      setStep('already'); setSubmitting(false); return;
+      if (res.status === 409) {
+        setStep('already'); setSubmitting(false); return;
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('결과 저장 오류:', errData);
+        alert(`결과 저장 오류: ${errData.error || res.status}`);
+        setSubmitting(false); return;
+      }
+
+      setResult(finalResult);
+      setStep('result');
+    } catch (err: any) {
+      console.error('제출 오류:', err);
+      alert(`제출 중 오류 발생: ${err.message}`);
     }
-
-    setResult(finalResult);
-    setStep('result');
     setSubmitting(false);
   }
 

@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
 import type { Exam, Question, Result, ResultDetail } from '@/lib/supabase';
 
 const KAKAO_LINK = process.env.NEXT_PUBLIC_KAKAO_LINK || 'https://open.kakao.com/o/gX01CYoi';
@@ -185,39 +186,55 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
 
   const completed = exam ? exam.questions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length : 0;
 
-  async function handleStart() {
+  function handleStart() {
     const found = exams.find(e => e.code === code.trim().toUpperCase());
     if (!name.trim()) { setError('이름을 입력하세요.'); return; }
     if (!found) { setError(`"${code}" 코드의 시험을 찾을 수 없습니다.`); return; }
-
-    // 서버에서 중복 제출 확인
-    const res = await fetch(`/api/results?examCode=${found.code}`);
-    const results = await res.json();
-    const already = results.find((r: Result) => r.student_name === name.trim());
-    if (already) { setExam(found); setStep('already'); return; }
-
+    // 중복 제출은 제출 시점에 서버에서 체크
     setExam(found); setStep('test'); setError('');
   }
 
   async function handleSubmit() {
     if (!exam) return;
     setSubmitting(true);
-    const r = gradeAnswers(exam.questions, answers);
-    const finalResult = { ...r, passed: r.total >= exam.passing_score };
+    try {
+      const r = gradeAnswers(exam.questions, answers);
+      const finalResult = { ...r, passed: r.total >= exam.passing_score };
 
-    // 서버에 결과 저장
-    const res = await fetch('/api/results', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ exam_code: exam.code, student_name: name.trim(), ...finalResult }),
-    });
+      // 중복 제출 확인
+      const { data: existing } = await supabase
+        .from('results')
+        .select('id')
+        .eq('exam_code', exam.code)
+        .eq('student_name', name.trim())
+        .maybeSingle();
 
-    if (res.status === 409) {
-      setStep('already'); setSubmitting(false); return;
+      if (existing) {
+        setStep('already'); setSubmitting(false); return;
+      }
+
+      // Supabase에 직접 저장
+      const { error } = await supabase.from('results').insert({
+        exam_code: exam.code,
+        student_name: name.trim(),
+        total: finalResult.total,
+        max_score: finalResult.maxScore,
+        passed: finalResult.passed,
+        details: finalResult.details,
+      });
+
+      if (error) {
+        console.error('저장 오류:', error);
+        alert(`저장 오류: ${error.message}`);
+        setSubmitting(false); return;
+      }
+
+      setResult(finalResult);
+      setStep('result');
+    } catch (err: any) {
+      console.error('제출 오류:', err);
+      alert(`제출 중 오류: ${err.message}`);
     }
-
-    setResult(finalResult);
-    setStep('result');
     setSubmitting(false);
   }
 

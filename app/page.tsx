@@ -352,10 +352,9 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
     </div>
   );
 }
-
 // ── 관리자 ────────────────────────────────────────────────────────────────
 function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => void; onRefresh: () => void }) {
-  const [tab, setTab] = useState<'list' | 'upload' | 'results'>('list');
+  const [tab, setTab] = useState<'list' | 'upload' | 'results' | 'listening'>('list');
   const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
   const [results, setResults] = useState<Result[]>([]);
   const [jsonInput, setJsonInput] = useState('');
@@ -365,6 +364,12 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Listening 상태
+  const [listeningTests, setListeningTests] = useState<any[]>([]);
+  const [selectedListening, setSelectedListening] = useState<any>(null);
+  const [listeningAttempts, setListeningAttempts] = useState<any[]>([]);
+  const [listeningLoading, setListeningLoading] = useState(false);
+
   const adminPw = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || '1234';
 
   async function loadResults(examCode: string) {
@@ -372,6 +377,44 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
     const data = await res.json();
     setResults(data);
   }
+
+  // Listening 시험 목록 로드
+  async function loadListeningTests() {
+    setListeningLoading(true);
+    try {
+      const res = await fetch('/api/listening-tests');
+      const data = await res.json();
+      setListeningTests(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Listening 시험 목록 로드 오류:', err);
+    }
+    setListeningLoading(false);
+  }
+
+  // 특정 Listening 시험의 응시 기록 로드 (문항도 함께)
+  async function loadListeningAttempts(testId: string, accessCode: string) {
+    setListeningLoading(true);
+    try {
+      const [attemptsRes, testRes] = await Promise.all([
+        fetch(`/api/listening-results?test_id=${testId}`),
+        fetch(`/api/listening-tests?code=${accessCode}`),
+      ]);
+      const attemptsData = await attemptsRes.json();
+      const testData = await testRes.json();
+      setListeningAttempts(Array.isArray(attemptsData) ? attemptsData : []);
+      setSelectedListening(testData);
+    } catch (err) {
+      console.error('응시 기록 로드 오류:', err);
+    }
+    setListeningLoading(false);
+  }
+
+  // Listening 탭 활성화 시 자동 로드
+  useEffect(() => {
+    if (tab === 'listening' && listeningTests.length === 0) {
+      loadListeningTests();
+    }
+  }, [tab]);
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -381,7 +424,6 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
     setUploadStep('parsing');
     setErrorMsg('');
 
-    // HWPX → 텍스트 추출
     let text = '';
     try {
       if (!(window as any).JSZip) {
@@ -406,7 +448,6 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
       setErrorMsg('파일 추출 실패. HWPX 형식인지 확인하세요.'); setUploadStep('error'); return;
     }
 
-    // 서버 API로 AI 파싱 (Anthropic API 서버사이드 호출)
     try {
       const res = await fetch('/api/parse', {
         method: 'POST',
@@ -458,6 +499,32 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
     onRefresh();
   }
 
+  // Listening 문항별 정답률 계산
+  function calculateQuestionStats() {
+    if (!selectedListening?.questions || listeningAttempts.length === 0) return [];
+    return selectedListening.questions.map((q: any, idx: number) => {
+      let correctCount = 0;
+      listeningAttempts.forEach(a => {
+        const userAns = (a.answers?.[q.id] || '').toString().trim().toLowerCase();
+        const correctAns = q.correct_answer.trim().toLowerCase();
+        if (userAns === correctAns) correctCount++;
+      });
+      const rate = listeningAttempts.length > 0 ? Math.round((correctCount / listeningAttempts.length) * 100) : 0;
+      return { num: idx + 1, type: q.question_type, correct: correctCount, total: listeningAttempts.length, rate };
+    });
+  }
+
+  function typeLabel(type: string): string {
+    const map: Record<string, string> = {
+      match: '내용 일치',
+      dictation: '받아쓰기',
+      dialogue: '이어질 말',
+      picture: '그림 고르기',
+      price: '가격 계산',
+    };
+    return map[type] || type;
+  }
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg }}>
       <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -466,9 +533,9 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
       </header>
       <div style={{ maxWidth: 740, margin: '0 auto', padding: 20 }}>
         <h2 style={{ margin: '20px 0 16px', fontSize: 18, fontWeight: 700, color: C.dark }}>관리자 대시보드</h2>
-        <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, marginBottom: 20 }}>
-          {([['list', `시험 목록 (${exams.length})`], ['upload', 'AI 업로드'], ['results', '결과 조회']] as [string, string][]).map(([t, label]) => (
-            <button key={t} onClick={() => setTab(t as any)} style={{ padding: '9px 18px', background: 'transparent', color: tab === t ? C.primary : C.muted, border: 'none', borderBottom: tab === t ? `2.5px solid ${C.primary}` : '2.5px solid transparent', borderRadius: 0, cursor: 'pointer', fontSize: 14, fontWeight: tab === t ? 700 : 400 }}>{label}</button>
+        <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, marginBottom: 20, overflowX: 'auto' }}>
+          {([['list', `시험 목록 (${exams.length})`], ['upload', 'AI 업로드'], ['results', '결과 조회'], ['listening', '🎧 듣기 시험']] as [string, string][]).map(([t, label]) => (
+            <button key={t} onClick={() => setTab(t as any)} style={{ padding: '9px 18px', background: 'transparent', color: tab === t ? C.primary : C.muted, border: 'none', borderBottom: tab === t ? `2.5px solid ${C.primary}` : '2.5px solid transparent', borderRadius: 0, cursor: 'pointer', fontSize: 14, fontWeight: tab === t ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</button>
           ))}
         </div>
 
@@ -556,7 +623,7 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
           </div>
         )}
 
-        {/* 결과 조회 */}
+        {/* 결과 조회 (기존 재시험) */}
         {tab === 'results' && (
           <div>
             <div style={{ marginBottom: 16 }}>
@@ -612,11 +679,130 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
             )}
           </div>
         )}
+
+        {/* 🎧 듣기 시험 탭 */}
+        {tab === 'listening' && (
+          <div>
+            {/* 시험 선택 뷰 */}
+            {!selectedListening && (
+              <>
+                <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: C.mid }}>등록된 듣기 시험을 선택하세요</p>
+                {listeningLoading && listeningTests.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 40, color: C.muted }}>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
+                    <p>불러오는 중...</p>
+                  </div>
+                ) : listeningTests.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 48, color: C.muted, background: C.card, border: `1px solid ${C.border}`, borderRadius: 12 }}>
+                    <p style={{ fontSize: 32, margin: '0 0 10px' }}>🎧</p>
+                    <p>등록된 듣기 시험이 없습니다.</p>
+                    <p style={{ fontSize: 12, marginTop: 6 }}>Supabase 대시보드에서 직접 추가하거나<br />나중에 업로드 기능이 추가될 예정입니다.</p>
+                  </div>
+                ) : (
+                  listeningTests.map(t => (
+                    <div key={t.id} onClick={() => loadListeningAttempts(t.id, t.access_code)} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 13, padding: '16px 20px', marginBottom: 10, cursor: 'pointer', transition: 'border-color .15s' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ margin: '0 0 4px', fontWeight: 700, fontSize: 15, color: C.dark }}>{t.title}</h3>
+                          <p style={{ margin: 0, fontSize: 12, color: C.muted }}>
+                            코드: <strong style={{ color: C.primary, fontFamily: 'monospace' }}>{t.access_code}</strong>
+                            {t.school && ` · ${t.school}`}
+                            {t.grade && ` ${t.grade}학년`}
+                            {` · ${t.question_count}문항`}
+                          </p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: C.primary }}>{t.attempt_count}</div>
+                          <div style={{ fontSize: 10, color: C.muted }}>응시자</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+
+            {/* 시험 상세 뷰 */}
+            {selectedListening && (
+              <div>
+                <button onClick={() => { setSelectedListening(null); setListeningAttempts([]); }} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13, marginBottom: 12, padding: 0 }}>← 목록으로</button>
+                <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700, color: C.dark }}>{selectedListening.title}</h3>
+                <p style={{ margin: '0 0 16px', fontSize: 12, color: C.muted }}>
+                  코드: <strong style={{ color: C.primary, fontFamily: 'monospace' }}>{selectedListening.access_code}</strong>
+                  {' · '}{selectedListening.questions?.length || 0}문항
+                </p>
+
+                {/* 통계 카드 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 20 }}>
+                  {[
+                    ['전체 응시', listeningAttempts.length + '명'],
+                    ['평균 점수', listeningAttempts.length > 0 ? (Math.round((listeningAttempts.reduce((s, a) => s + (a.score || 0), 0) / listeningAttempts.length) * 10) / 10) + '점' : '-'],
+                    ['최고 점수', listeningAttempts.length > 0 ? Math.max(...listeningAttempts.map(a => a.score || 0)) + '점' : '-'],
+                  ].map(([label, val]) => (
+                    <div key={label} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 16px', textAlign: 'center' }}>
+                      <p style={{ margin: '0 0 4px', fontSize: 12, color: C.muted }}>{label}</p>
+                      <p style={{ margin: 0, fontSize: 20, fontWeight: 700, color: C.dark }}>{val}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 문항별 정답률 */}
+                {listeningAttempts.length > 0 && (
+                  <div style={{ marginBottom: 20 }}>
+                    <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 700, color: C.mid, letterSpacing: '0.5px' }}>📊 문항별 정답률</p>
+                    <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px 16px' }}>
+                      {calculateQuestionStats().map((stat: any) => (
+                        <div key={stat.num} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0', borderBottom: stat.num < selectedListening.questions.length ? `1px dashed ${C.border}` : 'none' }}>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: C.dark, minWidth: 24 }}>Q{stat.num}</span>
+                          <span style={{ fontSize: 11, color: C.muted, minWidth: 70 }}>{typeLabel(stat.type)}</span>
+                          <div style={{ flex: 1, background: C.border, borderRadius: 4, height: 6, overflow: 'hidden' }}>
+                            <div style={{ width: `${stat.rate}%`, height: '100%', background: stat.rate >= 70 ? C.success : stat.rate >= 40 ? C.warning : C.danger, transition: 'width .3s' }} />
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.dark, minWidth: 40, textAlign: 'right' }}>{stat.rate}%</span>
+                          <span style={{ fontSize: 11, color: C.muted, minWidth: 36, textAlign: 'right' }}>{stat.correct}/{stat.total}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* 응시자 리스트 */}
+                <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 700, color: C.mid, letterSpacing: '0.5px' }}>👥 응시자 목록</p>
+                {listeningAttempts.length === 0 ? (
+                  <p style={{ color: C.muted, textAlign: 'center', padding: 32, background: C.card, borderRadius: 12, border: `1px solid ${C.border}` }}>아직 응시자가 없습니다.</p>
+                ) : (
+                  listeningAttempts.map(a => {
+                    const percent = a.total > 0 ? Math.round((a.score / a.total) * 100) : 0;
+                    const timeMin = Math.floor((a.time_spent_seconds || 0) / 60);
+                    const timeSec = (a.time_spent_seconds || 0) % 60;
+                    return (
+                      <div key={a.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '14px 18px', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <strong style={{ fontSize: 15, color: C.dark }}>{a.student_name}</strong>
+                            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                              {new Date(a.submitted_at || '').toLocaleString('ko-KR')} · ⏱ {timeMin}:{timeSec.toString().padStart(2, '0')}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: percent >= 70 ? C.success : percent >= 40 ? C.warning : C.danger }}>
+                              {a.score} / {a.total}
+                            </div>
+                            <div style={{ fontSize: 11, color: C.muted }}>{percent}%</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
 // ── 홈 ───────────────────────────────────────────────────────────────────
 function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[]; onStudent: () => void; onAdmin: () => void; onListening: () => void }) {
   const [showAdmin, setShowAdmin] = useState(false);

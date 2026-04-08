@@ -701,21 +701,26 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
 // ── ROOT ──────────────────────────────────────────────────────────────────
 // ── Listening Test 학생 화면 ─────────────────────────────────────────────
 function ListeningView({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<'code' | 'name' | 'test' | 'already'>('code');
+  const [step, setStep] = useState<'code' | 'name' | 'test' | 'submitted' | 'already'>('code');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [test, setTest] = useState<ListeningTest | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // 시험 진행 상태
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [replayCounts, setReplayCounts] = useState<Record<string, number>>({});
+  const [startTime, setStartTime] = useState<number>(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [finalScore, setFinalScore] = useState<{ score: number; total: number } | null>(null);
+  const [activeScript, setActiveScript] = useState<string | null>(null);
+
   // 시험 코드 확인
   async function handleCodeSubmit() {
-    if (!code.trim()) {
-      setError('시험 코드를 입력하세요.');
-      return;
-    }
-    setLoading(true);
-    setError('');
+    if (!code.trim()) { setError('시험 코드를 입력하세요.'); return; }
+    setLoading(true); setError('');
     try {
       const res = await fetch(`/api/listening-tests?code=${code.trim().toUpperCase()}`);
       const data = await res.json();
@@ -732,14 +737,85 @@ function ListeningView({ onBack }: { onBack: () => void }) {
     setLoading(false);
   }
 
-  // 이름 입력 후 시작
+  // 이름 입력 후 시험 시작
   function handleNameSubmit() {
-    if (!name.trim()) {
-      setError('이름을 입력하세요.');
+    if (!name.trim()) { setError('이름을 입력하세요.'); return; }
+    setError('');
+    setStartTime(Date.now());
+    setCurrentIdx(0);
+    setAnswers({});
+    setReplayCounts({});
+    setStep('test');
+  }
+
+  // 오디오 재생 (현재는 스크립트 공개로 시뮬레이션)
+  function handlePlayAudio(question: ListeningQuestion) {
+    const currentCount = replayCounts[question.id] || 0;
+    const limit = test?.audio_replay_limit || 2;
+    if (limit !== -1 && currentCount >= limit) {
+      alert('재생 가능 횟수를 초과했습니다.');
       return;
     }
-    setError('');
-    setStep('test');
+    setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
+    setActiveScript(question.script);
+    // 5초 후 자동으로 숨김 (실제 오디오 재생 시뮬레이션)
+    setTimeout(() => setActiveScript(null), 8000);
+  }
+
+  // 답 선택/입력
+  function handleAnswer(questionId: string, value: string) {
+    setAnswers(p => ({ ...p, [questionId]: value }));
+  }
+
+  // 자동 채점
+  function gradeAnswers(): { score: number; total: number } {
+    if (!test?.questions) return { score: 0, total: 0 };
+    let score = 0;
+    const total = test.questions.length;
+    test.questions.forEach(q => {
+      const userAnswer = (answers[q.id] || '').trim().toLowerCase();
+      const correctAnswer = q.correct_answer.trim().toLowerCase();
+      if (userAnswer === correctAnswer) score++;
+    });
+    return { score, total };
+  }
+
+  // 제출
+  async function handleSubmit() {
+    if (!test) return;
+    setSubmitting(true);
+    try {
+      const graded = gradeAnswers();
+      const timeSpent = Math.floor((Date.now() - startTime) / 1000);
+      const res = await fetch('/api/listening-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          test_id: test.id,
+          student_name: name.trim(),
+          answers,
+          score: graded.score,
+          total: graded.total,
+          time_spent_seconds: timeSpent,
+          replay_counts: replayCounts,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.already_submitted) {
+          setStep('already');
+        } else {
+          alert('제출 오류: ' + (data.error || 'Unknown'));
+        }
+        setSubmitting(false);
+        return;
+      }
+      setFinalScore(graded);
+      setStep('submitted');
+    } catch (err: any) {
+      alert('제출 중 오류: ' + err.message);
+    }
+    setSubmitting(false);
   }
 
   // ── 1. 시험 코드 입력 화면 ──
@@ -757,25 +833,10 @@ function ListeningView({ onBack }: { onBack: () => void }) {
             <p style={{ margin: 0, color: C.muted, fontSize: 14 }}>선생님이 알려준 시험 코드를 입력하세요</p>
           </div>
           <div style={{ background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
-            {error && (
-              <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>{error}</div>}
             <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>시험 코드</label>
-            <input
-              value={code}
-              onChange={e => setCode(e.target.value.toUpperCase())}
-              placeholder="TEST1"
-              onKeyDown={e => e.key === 'Enter' && handleCodeSubmit()}
-              style={{ marginBottom: 22, fontFamily: 'monospace', fontSize: 16, letterSpacing: '2px', textAlign: 'center' }}
-              disabled={loading}
-            />
-            <button
-              onClick={handleCodeSubmit}
-              disabled={loading}
-              style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: loading ? .7 : 1 }}
-            >
+            <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="TEST1" onKeyDown={e => e.key === 'Enter' && handleCodeSubmit()} style={{ marginBottom: 22, fontFamily: 'monospace', fontSize: 16, letterSpacing: '2px', textAlign: 'center' }} disabled={loading} />
+            <button onClick={handleCodeSubmit} disabled={loading} style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: loading ? .7 : 1 }}>
               {loading ? '확인 중...' : '다음 →'}
             </button>
           </div>
@@ -784,7 +845,7 @@ function ListeningView({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // ── 2. 이름 입력 + 시험 정보 화면 ──
+  // ── 2. 이름 입력 화면 ──
   if (step === 'name' && test) {
     return (
       <div style={{ minHeight: '100vh', background: C.bg }}>
@@ -805,48 +866,225 @@ function ListeningView({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           <div style={{ background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
-            {error && (
-              <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>
-                {error}
-              </div>
-            )}
+            {error && <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>{error}</div>}
             <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>이름</label>
-            <input
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="홍길동"
-              onKeyDown={e => e.key === 'Enter' && handleNameSubmit()}
-              style={{ marginBottom: 22 }}
-            />
-            <button
-              onClick={handleNameSubmit}
-              style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}
-            >
-              시험 시작 →
-            </button>
-            <p style={{ margin: '14px 0 0', fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 1.6 }}>
-              ⚠ 이 시험은 1회만 응시할 수 있습니다
-            </p>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" onKeyDown={e => e.key === 'Enter' && handleNameSubmit()} style={{ marginBottom: 22 }} />
+            <button onClick={handleNameSubmit} style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>시험 시작 →</button>
+            <p style={{ margin: '14px 0 0', fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 1.6 }}>⚠ 이 시험은 1회만 응시할 수 있습니다</p>
           </div>
         </div>
       </div>
     );
   }
 
-  // ── 3. 시험 화면 (임시: 다음 단계에서 만들 예정) ──
-  if (step === 'test' && test) {
+  // ── 3. 문제 풀이 화면 ──
+  if (step === 'test' && test && test.questions) {
+    const q = test.questions[currentIdx];
+    const totalQs = test.questions.length;
+    const answered = Object.keys(answers).filter(k => answers[k]).length;
+    const currentReplay = replayCounts[q.id] || 0;
+    const replayLimit = test.audio_replay_limit;
+    const canReplay = replayLimit === -1 || currentReplay < replayLimit;
+    const options = (q.options as string[]) || [];
+    const images = (q.image_urls as string[]) || [];
+
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        {/* 상단 헤더 */}
+        <header style={{ background: C.primary, padding: '14px 20px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <SKLogo size="sm" />
+            <span style={{ color: '#fff', fontSize: 13, fontWeight: 600 }}>{name}</span>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#fff' }}>{test.title}</p>
+          </div>
+          <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 4, height: 5 }}>
+            <div style={{ height: '100%', background: '#fff', borderRadius: 4, width: `${((currentIdx + 1) / totalQs) * 100}%`, transition: 'width .3s' }} />
+          </div>
+          <p style={{ margin: '5px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>문항 {currentIdx + 1} / {totalQs} · 답함 {answered}개</p>
+        </header>
+
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 16px 100px' }}>
+          {/* 오디오 카드 */}
+          <div style={{ background: 'linear-gradient(135deg,#1a1a1a,#2d2d2d)', borderRadius: 14, padding: 18, marginBottom: 16, color: '#fff' }}>
+            <div style={{ fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>🎧 Audio</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <button onClick={() => handlePlayAudio(q)} disabled={!canReplay} style={{ width: 48, height: 48, borderRadius: '50%', background: canReplay ? '#fff' : 'rgba(255,255,255,0.3)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: canReplay ? 'pointer' : 'not-allowed', flexShrink: 0, fontSize: 18 }}>
+                ▶
+              </button>
+              <div style={{ flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>
+                {activeScript ? '🔊 재생 중... (잠시 후 자동 숨김)' : '버튼을 눌러 재생하세요'}
+              </div>
+            </div>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
+              <span>재생 가능 횟수</span>
+              <span style={{ color: '#fff', fontWeight: 600 }}>🔊 {replayLimit === -1 ? '∞' : `${currentReplay} / ${replayLimit}`}</span>
+            </div>
+            {activeScript && (
+              <div style={{ marginTop: 12, padding: 12, background: 'rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line', fontFamily: 'Georgia, serif' }}>
+                {activeScript}
+              </div>
+            )}
+          </div>
+
+          {/* 문제 */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 7, marginBottom: 12 }}>
+              <span style={{ background: C.primary, color: '#fff', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>Q{currentIdx + 1}</span>
+              <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>
+                {q.question_type === 'match' && '내용 일치'}
+                {q.question_type === 'dictation' && '빈칸 받아쓰기'}
+                {q.question_type === 'dialogue' && '대화 후 이어질 말'}
+                {q.question_type === 'picture' && '그림 고르기'}
+                {q.question_type === 'price' && '가격 계산'}
+              </span>
+            </div>
+            <p style={{ margin: '0 0 14px', fontWeight: 600, fontSize: 15, lineHeight: 1.6, color: C.dark }}>{q.question_text}</p>
+
+            {/* 5지선다 (match, dialogue) */}
+            {(q.question_type === 'match' || q.question_type === 'dialogue') && options.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {options.map((opt, oi) => {
+                  const val = String(oi + 1);
+                  const selected = answers[q.id] === val;
+                  return (
+                    <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14, lineHeight: 1.5 }}>
+                      <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
+                      <span style={{ color: selected ? C.primary : C.dark }}>{'①②③④⑤'[oi]} {opt}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* 그림 고르기 (picture) */}
+            {q.question_type === 'picture' && (
+              <div>
+                {images.length > 0 ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {images.map((url, ii) => {
+                      const val = String(ii + 1);
+                      const selected = answers[q.id] === val;
+                      return (
+                        <button key={ii} onClick={() => handleAnswer(q.id, val)} style={{ padding: 10, borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: selected ? C.primary : C.mid }}>{'①②③④⑤'[ii]}</span>
+                          <img src={url} alt={`선택지 ${ii + 1}`} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', borderRadius: 6 }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : options.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {options.map((opt, oi) => {
+                      const val = String(oi + 1);
+                      const selected = answers[q.id] === val;
+                      return (
+                        <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14 }}>
+                          <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
+                          <span style={{ color: selected ? C.primary : C.dark }}>{'①②③④⑤'[oi]} {opt}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p style={{ color: C.muted, fontSize: 13 }}>이미지가 준비되지 않았습니다.</p>
+                )}
+              </div>
+            )}
+
+            {/* 빈칸 받아쓰기 (dictation) */}
+            {q.question_type === 'dictation' && (
+              <input value={answers[q.id] || ''} onChange={e => handleAnswer(q.id, e.target.value)} placeholder="답을 입력하세요" />
+            )}
+
+            {/* 가격 계산 (price) */}
+            {q.question_type === 'price' && (
+              options.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {options.map((opt, oi) => {
+                    const val = String(oi + 1);
+                    const selected = answers[q.id] === val;
+                    return (
+                      <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14 }}>
+                        <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
+                        <span style={{ color: selected ? C.primary : C.dark, fontWeight: 600 }}>{'①②③④⑤'[oi]} {opt}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <input value={answers[q.id] || ''} onChange={e => handleAnswer(q.id, e.target.value)} placeholder="금액을 입력하세요 (예: $15)" />
+              )
+            )}
+          </div>
+
+          {/* 문항 번호 패드 */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center', marginBottom: 16 }}>
+            {test.questions.map((qq, qi) => {
+              const done = !!answers[qq.id];
+              const current = qi === currentIdx;
+              return (
+                <button key={qq.id} onClick={() => setCurrentIdx(qi)} style={{ width: 32, height: 32, borderRadius: '50%', border: current ? `2px solid ${C.primary}` : `1px solid ${C.border}`, background: done ? C.primary : '#fff', color: done ? '#fff' : C.mid, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {qi + 1}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* 이전/다음 or 제출 */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={() => setCurrentIdx(Math.max(0, currentIdx - 1))} disabled={currentIdx === 0} style={{ flex: 1, padding: '13px', background: '#fff', color: C.dark, border: `1.5px solid ${C.border}`, borderRadius: 10, fontWeight: 600, fontSize: 14, cursor: currentIdx === 0 ? 'not-allowed' : 'pointer', opacity: currentIdx === 0 ? .5 : 1 }}>← 이전</button>
+            {currentIdx < totalQs - 1 ? (
+              <button onClick={() => setCurrentIdx(currentIdx + 1)} style={{ flex: 1.5, padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>다음 →</button>
+            ) : (
+              <button onClick={() => { if (confirm(`총 ${totalQs}문항 중 ${answered}문항 답변하셨습니다. 제출하시겠습니까?`)) handleSubmit(); }} disabled={submitting} style={{ flex: 1.5, padding: '13px', background: C.success, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer', opacity: submitting ? .7 : 1 }}>
+                {submitting ? '제출 중...' : '✓ 최종 제출'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 4. 제출 완료 화면 (간단 버전 — Step 3-3에서 확장) ──
+  if (step === 'submitted' && finalScore && test) {
+    const percent = Math.round((finalScore.score / finalScore.total) * 100);
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center' }}>
+          <SKLogo size="sm" />
+        </header>
+        <div style={{ maxWidth: 440, margin: '32px auto 0', padding: '0 20px' }}>
+          <div style={{ background: C.primary, borderRadius: 18, padding: '32px 24px', textAlign: 'center', color: '#fff', marginBottom: 20 }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🎧</div>
+            <div style={{ fontSize: 12, opacity: .8, letterSpacing: '1px', marginBottom: 8 }}>LISTENING TEST 제출 완료</div>
+            <p style={{ margin: '0 0 4px', fontSize: 14, opacity: .9 }}>{name} · {test.title}</p>
+            <h2 style={{ margin: '16px 0 4px', fontSize: 48, fontWeight: 800 }}>{finalScore.score} / {finalScore.total}</h2>
+            <p style={{ margin: 0, fontSize: 15, opacity: .85 }}>정답률 {percent}%</p>
+          </div>
+          <div style={{ background: C.warningBg, border: '1px solid #FCD34D', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#92400E', textAlign: 'center', marginBottom: 16 }}>
+            ⚠ 재응시 불가 · 결과는 선생님께 자동 전송되었습니다
+          </div>
+          <button onClick={onBack} style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>홈으로</button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 5. 이미 제출한 경우 ──
+  if (step === 'already') {
     return (
       <div style={{ minHeight: '100vh', background: C.bg }}>
         <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center' }}>
           <SKLogo size="sm" />
         </header>
         <div style={{ maxWidth: 440, margin: '60px auto', padding: '0 20px', textAlign: 'center' }}>
-          <div style={{ fontSize: 52, marginBottom: 16 }}>🚧</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: C.dark, margin: '0 0 10px' }}>준비 중입니다</h2>
+          <div style={{ fontSize: 52, marginBottom: 16 }}>🔒</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: C.dark, margin: '0 0 10px' }}>이미 제출한 시험입니다</h2>
           <p style={{ fontSize: 14, color: C.mid, lineHeight: 1.7, margin: '0 0 24px' }}>
-            <strong>{name}</strong>님 환영합니다!<br />
-            <strong>{test.title}</strong> 시험 화면은<br />
-            다음 업데이트에서 공개됩니다.
+            <strong>{name}</strong>님은 이미 응시하셨습니다.<br />재응시는 불가합니다.
           </p>
           <button onClick={onBack} style={{ padding: '12px 28px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>홈으로</button>
         </div>

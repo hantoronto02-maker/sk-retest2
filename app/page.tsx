@@ -700,8 +700,9 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
 
 // ── ROOT ──────────────────────────────────────────────────────────────────
 // ── Listening Test 학생 화면 ─────────────────────────────────────────────
+// ── Listening Test 학생 화면 ─────────────────────────────────────────────
 function ListeningView({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState<'code' | 'name' | 'test' | 'submitted' | 'already'>('code');
+  const [step, setStep] = useState<'code' | 'name' | 'test' | 'result' | 'already'>('code');
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [test, setTest] = useState<ListeningTest | null>(null);
@@ -714,8 +715,11 @@ function ListeningView({ onBack }: { onBack: () => void }) {
   const [replayCounts, setReplayCounts] = useState<Record<string, number>>({});
   const [startTime, setStartTime] = useState<number>(0);
   const [submitting, setSubmitting] = useState(false);
-  const [finalScore, setFinalScore] = useState<{ score: number; total: number } | null>(null);
-  const [activeScript, setActiveScript] = useState<string | null>(null);
+  const [finalScore, setFinalScore] = useState<{ score: number; total: number; timeSpent: number } | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+
+  // 복습 화면 상태
+  const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
 
   // 시험 코드 확인
   async function handleCodeSubmit() {
@@ -748,7 +752,7 @@ function ListeningView({ onBack }: { onBack: () => void }) {
     setStep('test');
   }
 
-  // 오디오 재생 (현재는 스크립트 공개로 시뮬레이션)
+  // 시험 중 오디오 재생 — 스크립트 공개 금지!
   function handlePlayAudio(question: ListeningQuestion) {
     const currentCount = replayCounts[question.id] || 0;
     const limit = test?.audio_replay_limit || 2;
@@ -757,9 +761,15 @@ function ListeningView({ onBack }: { onBack: () => void }) {
       return;
     }
     setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
-    setActiveScript(question.script);
-    // 5초 후 자동으로 숨김 (실제 오디오 재생 시뮬레이션)
-    setTimeout(() => setActiveScript(null), 8000);
+    setPlayingId(question.id);
+    // 실제 오디오가 있으면 audio_url을 재생해야 하지만, 지금은 시뮬레이션
+    // 5초 동안 "재생 중" 표시 후 종료
+    setTimeout(() => setPlayingId(null), 5000);
+  }
+
+  // 복습 모드 오디오 (무제한, 스크립트 공개)
+  function toggleReviewItem(questionId: string) {
+    setOpenItems(p => ({ ...p, [questionId]: !p[questionId] }));
   }
 
   // 답 선택/입력
@@ -810,12 +820,31 @@ function ListeningView({ onBack }: { onBack: () => void }) {
         setSubmitting(false);
         return;
       }
-      setFinalScore(graded);
-      setStep('submitted');
+      setFinalScore({ ...graded, timeSpent });
+      setStep('result');
     } catch (err: any) {
       alert('제출 중 오류: ' + err.message);
     }
     setSubmitting(false);
+  }
+
+  // 시간 포맷 (초 → MM:SS)
+  function formatTime(seconds: number): string {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  // 유형 한글명
+  function typeLabel(type: string): string {
+    const map: Record<string, string> = {
+      match: '내용 일치',
+      dictation: '빈칸 받아쓰기',
+      dialogue: '대화 후 이어질 말',
+      picture: '그림 고르기',
+      price: '가격 계산',
+    };
+    return map[type] || type;
   }
 
   // ── 1. 시험 코드 입력 화면 ──
@@ -885,12 +914,12 @@ function ListeningView({ onBack }: { onBack: () => void }) {
     const currentReplay = replayCounts[q.id] || 0;
     const replayLimit = test.audio_replay_limit;
     const canReplay = replayLimit === -1 || currentReplay < replayLimit;
+    const isPlaying = playingId === q.id;
     const options = (q.options as string[]) || [];
     const images = (q.image_urls as string[]) || [];
 
     return (
       <div style={{ minHeight: '100vh', background: C.bg }}>
-        {/* 상단 헤더 */}
         <header style={{ background: C.primary, padding: '14px 20px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <SKLogo size="sm" />
@@ -906,39 +935,28 @@ function ListeningView({ onBack }: { onBack: () => void }) {
         </header>
 
         <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 16px 100px' }}>
-          {/* 오디오 카드 */}
+          {/* 오디오 카드 — 스크립트 절대 공개 X */}
           <div style={{ background: 'linear-gradient(135deg,#1a1a1a,#2d2d2d)', borderRadius: 14, padding: 18, marginBottom: 16, color: '#fff' }}>
             <div style={{ fontSize: 10, letterSpacing: '1.5px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 10 }}>🎧 Audio</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <button onClick={() => handlePlayAudio(q)} disabled={!canReplay} style={{ width: 48, height: 48, borderRadius: '50%', background: canReplay ? '#fff' : 'rgba(255,255,255,0.3)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: canReplay ? 'pointer' : 'not-allowed', flexShrink: 0, fontSize: 18 }}>
-                ▶
+              <button onClick={() => handlePlayAudio(q)} disabled={!canReplay || isPlaying} style={{ width: 48, height: 48, borderRadius: '50%', background: canReplay && !isPlaying ? '#fff' : 'rgba(255,255,255,0.3)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: canReplay && !isPlaying ? 'pointer' : 'not-allowed', flexShrink: 0, fontSize: 18 }}>
+                {isPlaying ? '⏸' : '▶'}
               </button>
               <div style={{ flex: 1, fontSize: 13, color: 'rgba(255,255,255,0.85)' }}>
-                {activeScript ? '🔊 재생 중... (잠시 후 자동 숨김)' : '버튼을 눌러 재생하세요'}
+                {isPlaying ? '🔊 재생 중...' : canReplay ? '재생 버튼을 누르세요' : '재생 횟수를 모두 사용했습니다'}
               </div>
             </div>
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid rgba(255,255,255,0.12)', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>
               <span>재생 가능 횟수</span>
               <span style={{ color: '#fff', fontWeight: 600 }}>🔊 {replayLimit === -1 ? '∞' : `${currentReplay} / ${replayLimit}`}</span>
             </div>
-            {activeScript && (
-              <div style={{ marginTop: 12, padding: 12, background: 'rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-line', fontFamily: 'Georgia, serif' }}>
-                {activeScript}
-              </div>
-            )}
           </div>
 
           {/* 문제 */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '18px 20px', marginBottom: 16 }}>
             <div style={{ display: 'flex', gap: 7, marginBottom: 12 }}>
               <span style={{ background: C.primary, color: '#fff', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>Q{currentIdx + 1}</span>
-              <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>
-                {q.question_type === 'match' && '내용 일치'}
-                {q.question_type === 'dictation' && '빈칸 받아쓰기'}
-                {q.question_type === 'dialogue' && '대화 후 이어질 말'}
-                {q.question_type === 'picture' && '그림 고르기'}
-                {q.question_type === 'price' && '가격 계산'}
-              </span>
+              <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>{typeLabel(q.question_type)}</span>
             </div>
             <p style={{ margin: '0 0 14px', fontWeight: 600, fontSize: 15, lineHeight: 1.6, color: C.dark }}>{q.question_text}</p>
 
@@ -993,12 +1011,12 @@ function ListeningView({ onBack }: { onBack: () => void }) {
               </div>
             )}
 
-            {/* 빈칸 받아쓰기 (dictation) */}
+            {/* 빈칸 받아쓰기 */}
             {q.question_type === 'dictation' && (
               <input value={answers[q.id] || ''} onChange={e => handleAnswer(q.id, e.target.value)} placeholder="답을 입력하세요" />
             )}
 
-            {/* 가격 계산 (price) */}
+            {/* 가격 계산 */}
             {q.question_type === 'price' && (
               options.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1048,23 +1066,141 @@ function ListeningView({ onBack }: { onBack: () => void }) {
     );
   }
 
-  // ── 4. 제출 완료 화면 (간단 버전 — Step 3-3에서 확장) ──
-  if (step === 'submitted' && finalScore && test) {
+  // ── 4. 결과 + 복습 화면 ──
+  if (step === 'result' && finalScore && test && test.questions) {
     const percent = Math.round((finalScore.score / finalScore.total) * 100);
     return (
-      <div style={{ minHeight: '100vh', background: C.bg }}>
+      <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 40 }}>
         <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center' }}>
           <SKLogo size="sm" />
         </header>
-        <div style={{ maxWidth: 440, margin: '32px auto 0', padding: '0 20px' }}>
-          <div style={{ background: C.primary, borderRadius: 18, padding: '32px 24px', textAlign: 'center', color: '#fff', marginBottom: 20 }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🎧</div>
-            <div style={{ fontSize: 12, opacity: .8, letterSpacing: '1px', marginBottom: 8 }}>LISTENING TEST 제출 완료</div>
-            <p style={{ margin: '0 0 4px', fontSize: 14, opacity: .9 }}>{name} · {test.title}</p>
-            <h2 style={{ margin: '16px 0 4px', fontSize: 48, fontWeight: 800 }}>{finalScore.score} / {finalScore.total}</h2>
-            <p style={{ margin: 0, fontSize: 15, opacity: .85 }}>정답률 {percent}%</p>
+
+        <div style={{ maxWidth: 600, margin: '0 auto', padding: '20px 16px' }}>
+          {/* 점수 요약 카드 */}
+          <div style={{ background: 'linear-gradient(135deg,#1a1a1a,#2d2d2d)', borderRadius: 18, padding: '28px 24px', color: '#fff', marginBottom: 16, position: 'relative', overflow: 'hidden' }}>
+            <div style={{ fontSize: 10, letterSpacing: '1.5px', color: 'rgba(255,255,255,0.6)', marginBottom: 12, fontWeight: 700 }}>✓ 제출 완료</div>
+            <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 4 }}>{test.title}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginBottom: 20 }}>{name} · {new Date().toLocaleDateString('ko-KR')}</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <div style={{ fontSize: 52, fontWeight: 800, lineHeight: 1 }}>{finalScore.score}</div>
+              <div style={{ fontSize: 22, color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>/ {finalScore.total}</div>
+              <div style={{ marginLeft: 'auto', textAlign: 'right', fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
+                <div style={{ color: '#fff', fontWeight: 700, fontSize: 14 }}>{percent}점</div>
+                <div>⏱ {formatTime(finalScore.timeSpent)}</div>
+              </div>
+            </div>
           </div>
-          <div style={{ background: C.warningBg, border: '1px solid #FCD34D', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#92400E', textAlign: 'center', marginBottom: 16 }}>
+
+          {/* 안내 배너 */}
+          <div style={{ background: C.primaryPl, border: `1px solid ${C.border}`, borderLeft: `3px solid ${C.primary}`, borderRadius: 8, padding: '12px 14px', fontSize: 13, color: C.primary, lineHeight: 1.6, marginBottom: 20 }}>
+            ✏️ 정답 제출은 한 번만 가능합니다. 이제부터는 스크립트와 해설을 자유롭게 복습할 수 있어요. 문항을 탭해서 펼쳐보세요.
+          </div>
+
+          {/* 섹션 라벨 */}
+          <p style={{ margin: '0 0 10px', fontSize: 11, letterSpacing: '1.5px', textTransform: 'uppercase', color: C.muted, fontWeight: 700 }}>📚 문항별 복습</p>
+
+          {/* 문항 리스트 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+            {test.questions.map((q, qi) => {
+              const userAnswer = (answers[q.id] || '').trim();
+              const isCorrect = userAnswer.toLowerCase() === q.correct_answer.trim().toLowerCase();
+              const isOpen = !!openItems[q.id];
+              const options = (q.options as string[]) || [];
+
+              // 사용자 답과 정답을 보기 좋게 표시
+              const displayAnswer = (val: string) => {
+                const idx = parseInt(val) - 1;
+                if (!isNaN(idx) && options[idx]) return `${'①②③④⑤'[idx]} ${options[idx]}`;
+                return val || '(미응답)';
+              };
+
+              return (
+                <div key={q.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+                  {/* 헤더 (항상 보임) */}
+                  <div onClick={() => toggleReviewItem(q.id)} style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}>
+                    <div style={{ fontFamily: 'Georgia, serif', fontWeight: 700, fontSize: 15, color: C.dark, minWidth: 22, textAlign: 'center' }}>{qi + 1}</div>
+                    <div style={{ flex: 1, fontSize: 13 }}>
+                      <div style={{ fontWeight: 600, color: C.dark, marginBottom: 2 }}>{typeLabel(q.question_type)}</div>
+                      <div style={{ color: C.muted, fontSize: 11, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.question_text}</div>
+                    </div>
+                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: isCorrect ? C.successBg : C.dangerBg, color: isCorrect ? C.success : C.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+                      {isCorrect ? '✓' : '✗'}
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 16, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform .2s' }}>›</div>
+                  </div>
+
+                  {/* 펼친 상태 상세 */}
+                  {isOpen && (
+                    <div style={{ padding: '4px 16px 16px', borderTop: `1px dashed ${C.border}` }}>
+                      {/* 미니 오디오 (복습 모드 - 실제로는 무제한) */}
+                      <div style={{ marginTop: 14, marginBottom: 14, background: '#1a1a1a', borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 11 }}>
+                        <button style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 12 }}>▶</button>
+                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontStyle: 'italic' }}>복습 재생 (오디오는 곧 추가 예정)</div>
+                        <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>∞ 무제한</div>
+                      </div>
+
+                      {/* 스크립트 */}
+                      <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted, fontWeight: 700, marginBottom: 6 }}>📜 Script</div>
+                      <div style={{ fontFamily: 'Georgia, serif', fontSize: 14, lineHeight: 1.7, background: '#faf8f3', padding: '12px 14px', borderRadius: 8, color: C.dark, marginBottom: 14, whiteSpace: 'pre-line' }}>
+                        {q.script}
+                      </div>
+
+                      {/* 문제 전문 */}
+                      <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted, fontWeight: 700, marginBottom: 6 }}>❓ 문제</div>
+                      <div style={{ fontSize: 13, lineHeight: 1.6, color: C.dark, marginBottom: 14 }}>{q.question_text}</div>
+
+                      {/* 선택지 전체 (정답 하이라이트) */}
+                      {options.length > 0 && (
+                        <div style={{ marginBottom: 14 }}>
+                          {options.map((opt, oi) => {
+                            const val = String(oi + 1);
+                            const isUserAns = userAnswer === val;
+                            const isCorrectAns = q.correct_answer.trim() === val;
+                            let bg = 'transparent', color = C.mid, border = `1px solid ${C.border}`;
+                            if (isCorrectAns) { bg = C.successBg; color = C.success; border = `1px solid ${C.success}`; }
+                            else if (isUserAns) { bg = C.dangerBg; color = C.danger; border = `1px solid ${C.danger}`; }
+                            return (
+                              <div key={oi} style={{ padding: '8px 12px', borderRadius: 8, background: bg, border, color, fontSize: 13, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ fontWeight: 700 }}>{'①②③④⑤'[oi]}</span>
+                                <span style={{ flex: 1 }}>{opt}</span>
+                                {isCorrectAns && <span style={{ fontSize: 10, fontWeight: 700 }}>정답</span>}
+                                {isUserAns && !isCorrectAns && <span style={{ fontSize: 10, fontWeight: 700 }}>내 답</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* 입력형 문제 (선택지 없음) */}
+                      {options.length === 0 && (
+                        <div style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>
+                          <div style={{ display: 'flex', gap: 10, padding: '6px 0' }}>
+                            <span style={{ color: C.muted, minWidth: 60 }}>내 답</span>
+                            <span style={{ color: isCorrect ? C.success : C.danger, fontWeight: 600 }}>{displayAnswer(userAnswer)}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 10, padding: '6px 0' }}>
+                            <span style={{ color: C.muted, minWidth: 60 }}>정답</span>
+                            <span style={{ color: C.success, fontWeight: 600 }}>{displayAnswer(q.correct_answer)}</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 해설 */}
+                      {q.explanation && (
+                        <div style={{ background: C.primaryPl, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#1e3a8a', lineHeight: 1.6 }}>
+                          <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>💡 해설</div>
+                          {q.explanation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* 하단 안내 + 홈 */}
+          <div style={{ background: C.warningBg, border: '1px solid #FCD34D', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#92400E', textAlign: 'center', marginBottom: 14 }}>
             ⚠ 재응시 불가 · 결과는 선생님께 자동 전송되었습니다
           </div>
           <button onClick={onBack} style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>홈으로</button>

@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { Exam, Question, Result, ResultDetail } from '@/lib/supabase';
+import type { Exam, Question, Result, ResultDetail, ListeningTest, ListeningQuestion } from '@/lib/supabase';
 
 const KAKAO_LINK = process.env.NEXT_PUBLIC_KAKAO_LINK || 'https://open.kakao.com/o/gX01CYoi';
 const KAKAO_PW = process.env.NEXT_PUBLIC_KAKAO_PASSWORD || '4321';
@@ -618,7 +618,7 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
 }
 
 // ── 홈 ───────────────────────────────────────────────────────────────────
-function HomeScreen({ exams, onStudent, onAdmin }: { exams: Exam[]; onStudent: () => void; onAdmin: () => void }) {
+function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[]; onStudent: () => void; onAdmin: () => void; onListening: () => void }) {
   const [showAdmin, setShowAdmin] = useState(false);
   const [pw, setPw] = useState('');
   const [pwErr, setPwErr] = useState('');
@@ -644,6 +644,9 @@ function HomeScreen({ exams, onStudent, onAdmin }: { exams: Exam[]; onStudent: (
           <p style={{ margin: '0 0 36px', fontSize: 15, color: 'rgba(255,255,255,0.8)' }}>시험 코드를 입력하고 재시험을 응시하세요</p>
           <button onClick={onStudent} style={{ background: '#fff', color: C.primary, border: 'none', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
             📝 재시험 응시하기
+          </button>
+          <button onClick={onListening} style={{ marginTop: 12, background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
+            🎧 듣기 시험 응시
           </button>
         </div>
       </div>
@@ -696,8 +699,165 @@ function HomeScreen({ exams, onStudent, onAdmin }: { exams: Exam[]; onStudent: (
 }
 
 // ── ROOT ──────────────────────────────────────────────────────────────────
+// ── Listening Test 학생 화면 ─────────────────────────────────────────────
+function ListeningView({ onBack }: { onBack: () => void }) {
+  const [step, setStep] = useState<'code' | 'name' | 'test' | 'already'>('code');
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [test, setTest] = useState<ListeningTest | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // 시험 코드 확인
+  async function handleCodeSubmit() {
+    if (!code.trim()) {
+      setError('시험 코드를 입력하세요.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/listening-tests?code=${code.trim().toUpperCase()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || '시험을 찾을 수 없습니다.');
+        setLoading(false);
+        return;
+      }
+      setTest(data);
+      setStep('name');
+    } catch (err: any) {
+      setError('서버 연결 오류: ' + err.message);
+    }
+    setLoading(false);
+  }
+
+  // 이름 입력 후 시작
+  function handleNameSubmit() {
+    if (!name.trim()) {
+      setError('이름을 입력하세요.');
+      return;
+    }
+    setError('');
+    setStep('test');
+  }
+
+  // ── 1. 시험 코드 입력 화면 ──
+  if (step === 'code') {
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <SKLogo size="sm" />
+          <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13 }}>← 홈</button>
+        </header>
+        <div style={{ maxWidth: 440, margin: '48px auto 0', padding: '0 20px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <div style={{ fontSize: 48, marginBottom: 8 }}>🎧</div>
+            <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: C.dark }}>듣기 시험 응시</h2>
+            <p style={{ margin: 0, color: C.muted, fontSize: 14 }}>선생님이 알려준 시험 코드를 입력하세요</p>
+          </div>
+          <div style={{ background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
+            {error && (
+              <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>
+                {error}
+              </div>
+            )}
+            <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>시험 코드</label>
+            <input
+              value={code}
+              onChange={e => setCode(e.target.value.toUpperCase())}
+              placeholder="TEST1"
+              onKeyDown={e => e.key === 'Enter' && handleCodeSubmit()}
+              style={{ marginBottom: 22, fontFamily: 'monospace', fontSize: 16, letterSpacing: '2px', textAlign: 'center' }}
+              disabled={loading}
+            />
+            <button
+              onClick={handleCodeSubmit}
+              disabled={loading}
+              style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: loading ? .7 : 1 }}
+            >
+              {loading ? '확인 중...' : '다음 →'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 2. 이름 입력 + 시험 정보 화면 ──
+  if (step === 'name' && test) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <SKLogo size="sm" />
+          <button onClick={() => { setStep('code'); setError(''); }} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13 }}>← 뒤로</button>
+        </header>
+        <div style={{ maxWidth: 440, margin: '32px auto 0', padding: '0 20px' }}>
+          <div style={{ background: C.primaryPl, borderRadius: 14, padding: 20, border: `1px solid ${C.border}`, marginBottom: 20 }}>
+            <p style={{ margin: '0 0 6px', fontSize: 11, color: C.primary, fontWeight: 700, letterSpacing: '0.5px' }}>📝 시험 정보</p>
+            <h3 style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 700, color: C.dark }}>{test.title}</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13, color: C.mid }}>
+              {test.school && <div>🏫 {test.school} {test.grade && `${test.grade}학년`}</div>}
+              {test.textbook && <div>📚 {test.textbook} {test.unit}</div>}
+              <div>🔊 오디오 재생 가능 횟수: {test.audio_replay_limit === -1 ? '무제한' : `${test.audio_replay_limit}회`}</div>
+              {test.time_limit_minutes && <div>⏱ 제한 시간: {test.time_limit_minutes}분</div>}
+              <div>📋 총 {test.questions?.length || 0}문항</div>
+            </div>
+          </div>
+          <div style={{ background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
+            {error && (
+              <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>
+                {error}
+              </div>
+            )}
+            <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>이름</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="홍길동"
+              onKeyDown={e => e.key === 'Enter' && handleNameSubmit()}
+              style={{ marginBottom: 22 }}
+            />
+            <button
+              onClick={handleNameSubmit}
+              style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}
+            >
+              시험 시작 →
+            </button>
+            <p style={{ margin: '14px 0 0', fontSize: 12, color: C.muted, textAlign: 'center', lineHeight: 1.6 }}>
+              ⚠ 이 시험은 1회만 응시할 수 있습니다
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── 3. 시험 화면 (임시: 다음 단계에서 만들 예정) ──
+  if (step === 'test' && test) {
+    return (
+      <div style={{ minHeight: '100vh', background: C.bg }}>
+        <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center' }}>
+          <SKLogo size="sm" />
+        </header>
+        <div style={{ maxWidth: 440, margin: '60px auto', padding: '0 20px', textAlign: 'center' }}>
+          <div style={{ fontSize: 52, marginBottom: 16 }}>🚧</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: C.dark, margin: '0 0 10px' }}>준비 중입니다</h2>
+          <p style={{ fontSize: 14, color: C.mid, lineHeight: 1.7, margin: '0 0 24px' }}>
+            <strong>{name}</strong>님 환영합니다!<br />
+            <strong>{test.title}</strong> 시험 화면은<br />
+            다음 업데이트에서 공개됩니다.
+          </p>
+          <button onClick={onBack} style={{ padding: '12px 28px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>홈으로</button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
 export default function App() {
-  const [screen, setScreen] = useState<'home' | 'student' | 'admin'>('home');
+  const [screen, setScreen] = useState<'home' | 'student' | 'admin' | 'listening'>('home');
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -721,5 +881,6 @@ export default function App() {
 
   if (screen === 'student') return <StudentView exams={exams} onBack={() => setScreen('home')} />;
   if (screen === 'admin') return <AdminView exams={exams} onBack={() => setScreen('home')} onRefresh={loadExams} />;
-  return <HomeScreen exams={exams} onStudent={() => setScreen('student')} onAdmin={() => setScreen('admin')} />;
+  if (screen === 'listening') return <ListeningView onBack={() => setScreen('home')} />;
+  return <HomeScreen exams={exams} onStudent={() => setScreen('student')} onAdmin={() => setScreen('admin')} onListening={() => setScreen('listening')} />;
 }

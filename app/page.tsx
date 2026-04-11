@@ -951,20 +951,29 @@ function ListeningView({ onBack }: { onBack: () => void }) {
       alert('오디오 파일이 준비되지 않았습니다.');
       return;
     }
-    setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
-    setPlayingId(question.id);
 
+    // 오디오 먼저 생성하고 play() 즉시 호출 (사용자 클릭 컨텍스트 유지)
     const audio = new Audio(question.audio_url);
-    audio.play().catch(err => {
-      console.error('오디오 재생 실패:', err);
-      alert('오디오 재생에 실패했습니다.');
-      setPlayingId(null);
-    });
     audio.onended = () => setPlayingId(null);
-    audio.onerror = () => {
+    audio.onerror = (e) => {
+      console.error('오디오 에러:', e);
       alert('오디오를 불러올 수 없습니다.');
       setPlayingId(null);
     };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          // 재생 성공한 후에 state 업데이트
+          setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
+          setPlayingId(question.id);
+        })
+        .catch(err => {
+          console.error('오디오 재생 실패:', err);
+          alert('오디오 재생 실패: ' + err.message);
+        });
+    }
   }
 
   // 복습 모드 오디오 (무제한, 스크립트 공개)

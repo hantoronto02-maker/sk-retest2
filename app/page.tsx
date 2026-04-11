@@ -939,6 +939,7 @@ function ListeningView({ onBack }: { onBack: () => void }) {
   }
 
   // 시험 중 오디오 재생 — 스크립트 공개 금지!
+// 시험 중 오디오 재생 (실제 mp3 재생)
   function handlePlayAudio(question: ListeningQuestion) {
     const currentCount = replayCounts[question.id] || 0;
     const limit = test?.audio_replay_limit || 2;
@@ -946,11 +947,24 @@ function ListeningView({ onBack }: { onBack: () => void }) {
       alert('재생 가능 횟수를 초과했습니다.');
       return;
     }
+    if (!question.audio_url) {
+      alert('오디오 파일이 준비되지 않았습니다.');
+      return;
+    }
     setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
     setPlayingId(question.id);
-    // 실제 오디오가 있으면 audio_url을 재생해야 하지만, 지금은 시뮬레이션
-    // 5초 동안 "재생 중" 표시 후 종료
-    setTimeout(() => setPlayingId(null), 5000);
+
+    const audio = new Audio(question.audio_url);
+    audio.play().catch(err => {
+      console.error('오디오 재생 실패:', err);
+      alert('오디오 재생에 실패했습니다.');
+      setPlayingId(null);
+    });
+    audio.onended = () => setPlayingId(null);
+    audio.onerror = () => {
+      alert('오디오를 불러올 수 없습니다.');
+      setPlayingId(null);
+    };
   }
 
   // 복습 모드 오디오 (무제한, 스크립트 공개)
@@ -1317,14 +1331,12 @@ function ListeningView({ onBack }: { onBack: () => void }) {
 
                   {/* 펼친 상태 상세 */}
                   {isOpen && (
-                    <div style={{ padding: '4px 16px 16px', borderTop: `1px dashed ${C.border}` }}>
-                      {/* 미니 오디오 (복습 모드 - 실제로는 무제한) */}
-                      <div style={{ marginTop: 14, marginBottom: 14, background: '#1a1a1a', borderRadius: 10, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 11 }}>
-                        <button style={{ width: 32, height: 32, borderRadius: '50%', background: '#fff', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, fontSize: 12 }}>▶</button>
-                        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, fontStyle: 'italic' }}>복습 재생 (오디오는 곧 추가 예정)</div>
-                        <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase' }}>∞ 무제한</div>
-                      </div>
-
+                      {q.audio_url && (
+                        <div style={{ marginTop: 14, marginBottom: 14, background: '#1a1a1a', borderRadius: 10, padding: '10px 12px' }}>
+                          <audio controls src={q.audio_url} style={{ width: '100%', height: 32 }} />
+                          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 6 }}>∞ 복습 무제한 재생</div>
+                        </div>
+                      )}
                       {/* 스크립트 */}
                       <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted, fontWeight: 700, marginBottom: 6 }}>📜 Script</div>
                       <div style={{ fontFamily: 'Georgia, serif', fontSize: 14, lineHeight: 1.7, background: '#faf8f3', padding: '12px 14px', borderRadius: 8, color: C.dark, marginBottom: 14, whiteSpace: 'pre-line' }}>

@@ -941,39 +941,40 @@ function ListeningView({ onBack }: { onBack: () => void }) {
   // 시험 중 오디오 재생 — 스크립트 공개 금지!
 // 시험 중 오디오 재생 (실제 mp3 재생)
   function handlePlayAudio(question: ListeningQuestion) {
+    console.log('🎵 handlePlayAudio 호출됨', question.id, question.audio_url);
+    
     const currentCount = replayCounts[question.id] || 0;
     const limit = test?.audio_replay_limit || 2;
+    
     if (limit !== -1 && currentCount >= limit) {
+      console.log('❌ 재생 횟수 초과');
       alert('재생 가능 횟수를 초과했습니다.');
       return;
     }
     if (!question.audio_url) {
+      console.log('❌ audio_url 없음');
       alert('오디오 파일이 준비되지 않았습니다.');
       return;
     }
 
-    // 오디오 먼저 생성하고 play() 즉시 호출 (사용자 클릭 컨텍스트 유지)
+    console.log('🔊 Audio 객체 생성:', question.audio_url);
     const audio = new Audio(question.audio_url);
-    audio.onended = () => setPlayingId(null);
-    audio.onerror = (e) => {
-      console.error('오디오 에러:', e);
-      alert('오디오를 불러올 수 없습니다.');
+    
+    audio.play()
+      .then(() => {
+        console.log('✅ 재생 성공');
+        setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
+        setPlayingId(question.id);
+      })
+      .catch(err => {
+        console.error('❌ 재생 실패:', err);
+        alert('재생 실패: ' + err.message);
+      });
+    
+    audio.onended = () => {
+      console.log('🏁 재생 종료');
       setPlayingId(null);
     };
-
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          // 재생 성공한 후에 state 업데이트
-          setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
-          setPlayingId(question.id);
-        })
-        .catch(err => {
-          console.error('오디오 재생 실패:', err);
-          alert('오디오 재생 실패: ' + err.message);
-        });
-    }
   }
 
   // 복습 모드 오디오 (무제한, 스크립트 공개)
@@ -1340,6 +1341,7 @@ function ListeningView({ onBack }: { onBack: () => void }) {
 
                   {/* 펼친 상태 상세 */}
                   {isOpen && (
+                    <div style={{ padding: '0 16px 16px 16px', borderTop: `1px solid ${C.border}` }}>
                       {q.audio_url && (
                         <div style={{ marginTop: 14, marginBottom: 14, background: '#1a1a1a', borderRadius: 10, padding: '10px 12px' }}>
                           <audio controls src={q.audio_url} style={{ width: '100%', height: 32 }} />

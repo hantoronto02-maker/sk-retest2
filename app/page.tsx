@@ -940,41 +940,32 @@ function ListeningView({ onBack }: { onBack: () => void }) {
 
   // 시험 중 오디오 재생 — 스크립트 공개 금지!
 // 시험 중 오디오 재생 (실제 mp3 재생)
-  function handlePlayAudio(question: ListeningQuestion) {
-    console.log('🎵 handlePlayAudio 호출됨', question.id, question.audio_url);
-    
+function handlePlayAudio(question: ListeningQuestion) {
     const currentCount = replayCounts[question.id] || 0;
     const limit = test?.audio_replay_limit || 2;
-    
+
     if (limit !== -1 && currentCount >= limit) {
-      console.log('❌ 재생 횟수 초과');
       alert('재생 가능 횟수를 초과했습니다.');
       return;
     }
     if (!question.audio_url) {
-      console.log('❌ audio_url 없음');
       alert('오디오 파일이 준비되지 않았습니다.');
       return;
     }
 
-    console.log('🔊 Audio 객체 생성:', question.audio_url);
     const audio = new Audio(question.audio_url);
-    
+
     audio.play()
       .then(() => {
-        console.log('✅ 재생 성공');
         setReplayCounts(p => ({ ...p, [question.id]: currentCount + 1 }));
         setPlayingId(question.id);
       })
       .catch(err => {
-        console.error('❌ 재생 실패:', err);
-        alert('재생 실패: ' + err.message);
+        console.error('오디오 재생 실패:', err);
+        alert('오디오를 재생할 수 없습니다. 네트워크를 확인하세요.');
       });
-    
-    audio.onended = () => {
-      console.log('🏁 재생 종료');
-      setPlayingId(null);
-    };
+
+    audio.onended = () => setPlayingId(null);
   }
 
   // 복습 모드 오디오 (무제한, 스크립트 공개)

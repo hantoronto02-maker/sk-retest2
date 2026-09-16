@@ -6,3 +6,6 @@ app/scripts/generate_images.py
 node_modules/
 .next/
 .env.local
+# GR2M1 음원 작업 폴더 / 생성 스크립트
+_audio/
+app/scripts/generate_gr2m1.py

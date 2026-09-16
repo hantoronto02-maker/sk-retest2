@@ -9,3 +9,4 @@ node_modules/
 # GR2M1 음원 작업 폴더 / 생성 스크립트
 _audio/
 app/scripts/generate_gr2m1.py
+app/scripts/generate_gr2m2.py

@@ -552,6 +552,8 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
       dialogue: '이어질 말',
       picture: '그림 고르기',
       price: '가격 계산',
+      natural: '자연스러운 대화',
+      picture_desc: '그림 불일치',
     };
     return map[type] || type;
   }
@@ -918,6 +920,11 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
 // ── ROOT ──────────────────────────────────────────────────────────────────
 // ── Listening Test 학생 화면 ─────────────────────────────────────────────
 // ── Listening Test 학생 화면 ─────────────────────────────────────────────
+// 문항별 배점이 서로 다른 시험인지 (실전 모의고사형)
+function isWeighted(questions: ListeningQuestion[]): boolean {
+  return new Set(questions.map(q => q.points)).size > 1;
+}
+
 function ListeningView({ onBack }: { onBack: () => void }) {
   const [step, setStep] = useState<'code' | 'name' | 'test' | 'result' | 'already'>('code');
   const [code, setCode] = useState('');
@@ -1012,12 +1019,16 @@ function handlePlayAudio(question: ListeningQuestion) {
   // 자동 채점
   function gradeAnswers(): { score: number; total: number } {
     if (!test?.questions) return { score: 0, total: 0 };
+    // 배점이 문항마다 다르면(예: 실전 모의고사 2·2·3·2·3·2) 배점 합산, 모두 같으면 기존처럼 문항 수로 채점
+    const weighted = isWeighted(test.questions);
     let score = 0;
-    const total = test.questions.length;
+    let total = 0;
     test.questions.forEach(q => {
+      const w = weighted ? (q.points || 0) : 1;
+      total += w;
       const userAnswer = (answers[q.id] || '').trim().toLowerCase();
       const correctAnswer = q.correct_answer.trim().toLowerCase();
-      if (userAnswer === correctAnswer) score++;
+      if (userAnswer === correctAnswer) score += w;
     });
     return { score, total };
   }
@@ -1075,6 +1086,8 @@ function handlePlayAudio(question: ListeningQuestion) {
       dialogue: '대화 후 이어질 말',
       picture: '그림 고르기',
       price: '가격 계산',
+      natural: '자연스러운 대화',
+      picture_desc: '그림 불일치',
     };
     return map[type] || type;
   }
@@ -1189,8 +1202,36 @@ function handlePlayAudio(question: ListeningQuestion) {
             <div style={{ display: 'flex', gap: 7, marginBottom: 12 }}>
               <span style={{ background: C.primary, color: '#fff', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>Q{currentIdx + 1}</span>
               <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>{typeLabel(q.question_type)}</span>
+              {isWeighted(test.questions) && (
+                <span style={{ background: '#FEF3C7', color: '#92400E', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>{q.points}점</span>
+              )}
             </div>
-            <p style={{ margin: '0 0 14px', fontWeight: 600, fontSize: 15, lineHeight: 1.6, color: C.dark }}>{q.question_text}</p>
+            <p style={{ margin: '0 0 14px', fontWeight: 600, fontSize: 15, lineHeight: 1.6, color: C.dark, whiteSpace: 'pre-line' }}>{q.question_text}</p>
+
+            {/* 음원 선택지형 (natural: 자연스러운 대화 / picture_desc: 그림 불일치) — 화면엔 번호만 */}
+            {(q.question_type === 'natural' || q.question_type === 'picture_desc') && (
+              <div>
+                {q.question_type === 'picture_desc' && (
+                  images.length > 0 ? (
+                    <img src={images[0]} alt="문항 그림" style={{ width: '100%', borderRadius: 10, border: `1px solid ${C.border}`, marginBottom: 12, display: 'block' }} />
+                  ) : (
+                    <p style={{ color: C.muted, fontSize: 13, marginBottom: 12 }}>이미지가 준비되지 않았습니다.</p>
+                  )
+                )}
+                <p style={{ margin: '0 0 10px', fontSize: 12, color: C.muted }}>🎧 선택지는 음원으로만 들려줍니다. 알맞은 번호를 고르세요.</p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                  {[1, 2, 3, 4, 5].map(n => {
+                    const val = String(n);
+                    const selected = answers[q.id] === val;
+                    return (
+                      <button key={n} onClick={() => handleAnswer(q.id, val)} style={{ padding: '14px 0', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primary : '#FAFBFF', color: selected ? '#fff' : C.dark, fontSize: 20, fontWeight: 700, cursor: 'pointer' }}>
+                        {'①②③④⑤'[n - 1]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* 5지선다 (match, dialogue) */}
             {(q.question_type === 'match' || q.question_type === 'dialogue') && options.length > 0 && (
@@ -1379,6 +1420,11 @@ function handlePlayAudio(question: ListeningQuestion) {
                       {/* 문제 전문 */}
                       <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.muted, fontWeight: 700, marginBottom: 6 }}>❓ 문제</div>
                       <div style={{ fontSize: 13, lineHeight: 1.6, color: C.dark, marginBottom: 14 }}>{q.question_text}</div>
+
+                      {/* 그림 불일치 문항 그림 */}
+                      {q.question_type === 'picture_desc' && (q.image_urls as string[] | null)?.[0] && (
+                        <img src={(q.image_urls as string[])[0]} alt="문항 그림" style={{ width: '100%', borderRadius: 8, border: `1px solid ${C.border}`, marginBottom: 14, display: 'block' }} />
+                      )}
 
                       {/* 선택지 전체 (정답 하이라이트) */}
                       {options.length > 0 && (

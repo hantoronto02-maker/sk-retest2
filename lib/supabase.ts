@@ -49,7 +49,7 @@ export type Result = {
 // Listening Test 타입 (2026.04 추가)
 // ============================================
 
-export type ListeningQuestionType = 'match' | 'dictation' | 'dialogue' | 'picture' | 'price';
+export type ListeningQuestionType = 'match' | 'dictation' | 'dialogue' | 'picture' | 'price' | 'natural' | 'picture_desc';
 
 export type ListeningQuestion = {
   id: string;

@@ -14,6 +14,7 @@ export type Question = {
   acceptedAnswers?: string[];
   keywords?: string[];
   points: number;
+  explanation?: string;
 };
 
 export type Exam = {

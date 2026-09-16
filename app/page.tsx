@@ -59,6 +59,8 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
   const resultRef = useRef<HTMLDivElement>(null);
   const [capturing, setCapturing] = useState(false);
   const [textCopied, setTextCopied] = useState(false);
+  const [showExplanations, setShowExplanations] = useState(false);
+  const hasExplanations = exam.questions.some((q: Question) => q.explanation);
 
   const resultText = [
     `[SK선경어학원 재시험 결과]`,
@@ -122,15 +124,44 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
             </div>
           </div>
           <div style={{ background: C.card, borderRadius: 14, padding: 18, border: `1px solid ${C.border}` }}>
-            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 600, color: C.mid }}>문항별 결과</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-              {result.details.map((d: ResultDetail, i: number) => (
-                <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderRadius: 9, background: d.correct ? C.successBg : C.dangerBg }}>
-                  <span style={{ color: C.dark, fontWeight: 500, fontSize: 13 }}>Q{i + 1}</span>
-                  <span style={{ fontWeight: 700, color: d.correct ? C.success : C.danger, fontSize: 13 }}>{d.correct ? `+${d.points}점` : '오답'}</span>
-                </div>
-              ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.mid }}>문항별 결과</p>
+              {hasExplanations && (
+                <button onClick={() => setShowExplanations(v => !v)} style={{ background: C.primaryPl, color: C.primary, border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  {showExplanations ? '해설 접기 ▲' : '📖 해설 보기 ▼'}
+                </button>
+              )}
             </div>
+            {!showExplanations ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {result.details.map((d: ResultDetail, i: number) => (
+                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderRadius: 9, background: d.correct ? C.successBg : C.dangerBg }}>
+                    <span style={{ color: C.dark, fontWeight: 500, fontSize: 13 }}>Q{i + 1}</span>
+                    <span style={{ fontWeight: 700, color: d.correct ? C.success : C.danger, fontSize: 13 }}>{d.correct ? `+${d.points}점` : '오답'}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {result.details.map((d: ResultDetail, i: number) => {
+                  const q = exam.questions[i];
+                  return (
+                    <div key={d.id} style={{ borderRadius: 10, border: `1px solid ${d.correct ? '#6EE7B7' : '#FCA5A5'}`, overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: d.correct ? C.successBg : C.dangerBg }}>
+                        <span style={{ color: C.dark, fontWeight: 600, fontSize: 13 }}>Q{i + 1}</span>
+                        <span style={{ fontWeight: 700, color: d.correct ? C.success : C.danger, fontSize: 13 }}>{d.correct ? `+${d.points}점 정답` : '오답'}</span>
+                      </div>
+                      {!d.correct && q?.explanation && (
+                        <div style={{ padding: '10px 12px', background: '#FFFBEB', borderTop: '1px solid #FCD34D' }}>
+                          <p style={{ margin: 0, fontSize: 12, color: '#92400E', fontWeight: 600, marginBottom: 4 }}>📖 해설</p>
+                          <p style={{ margin: 0, fontSize: 13, color: '#78350F', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{q.explanation}</p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
               <span style={{ color: C.mid }}>정답 {result.details.filter((d: ResultDetail) => d.correct).length}개 / 오답 {result.details.filter((d: ResultDetail) => !d.correct).length}개</span>
               <span style={{ fontWeight: 700, color: C.dark }}>{result.total}점</span>

@@ -867,6 +867,11 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
           <button onClick={onListening} style={{ marginTop: 12, background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
             🎧 듣기 시험 응시
           </button>
+          <div style={{ marginTop: 12 }}>
+            <a href="/practice" style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, textDecoration: 'none' }}>
+              🗣 받아쓰기 · 듣기 연습
+            </a>
+          </div>
         </div>
       </div>
 

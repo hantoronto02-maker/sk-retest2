@@ -103,3 +103,9 @@
 .pp .set{display:block;text-decoration:none;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:16px}
 .pp .set b{display:block;font-size:17px}.pp .set span{font-size:13px;color:var(--mute)}
 .pp .set i{font-style:normal;font-size:12px;font-weight:700;color:var(--leaf);letter-spacing:.05em}
+.pp .grades{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.pp .grade{display:flex;flex-direction:column;gap:4px;text-decoration:none;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:22px 18px}
+.pp .grade b{font-size:34px;font-weight:900;color:var(--navy);line-height:1.1}
+.pp .grade span{font-size:14px;color:var(--mute)}
+.pp .grade i{font-style:normal;font-size:12px;font-weight:700;color:var(--leaf);letter-spacing:.05em;margin-top:6px}
+.pp .grade:hover,.pp .set:hover{border-color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}

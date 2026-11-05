@@ -4,27 +4,31 @@
   "title": "중1 동아(윤정미) Lesson 6",
   "sub": "Join the Zero-Waste Challenge · 본문 + 대화문",
   "n": 295,
-  "q": 12
+  "q": 12,
+  "grade": 1
  },
  {
   "id": "g1-dong-yoon-l7",
   "title": "중1 동아(윤정미) Lesson 7",
   "sub": "Let's Make a Movie! · 본문 + 대화문",
   "n": 324,
-  "q": 12
+  "q": 12,
+  "grade": 1
  },
  {
   "id": "g1-dong-yoon-l8",
   "title": "중1 동아(윤정미) Lesson 8",
   "sub": "Goldilocks Learns Her Lesson · 본문 + 대화문",
   "n": 370,
-  "q": 12
+  "q": 12,
+  "grade": 1
  },
  {
   "id": "g2-dong-lee-l78",
   "title": "중2 동아(이병민) Lesson 7 · 8",
   "sub": "7과 Idioms · 8과 Quebec Winter Carnival · 본문",
   "n": 112,
-  "q": 12
+  "q": 12,
+  "grade": 2
  }
 ]

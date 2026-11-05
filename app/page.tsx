@@ -7,12 +7,14 @@ const KAKAO_LINK = process.env.NEXT_PUBLIC_KAKAO_LINK || 'https://open.kakao.com
 const KAKAO_PW = process.env.NEXT_PUBLIC_KAKAO_PASSWORD || '4321';
 
 const C = {
-  primary: '#1A56DB', primaryDk: '#1345B5', primaryPl: '#EBF2FF',
-  dark: '#0F172A', mid: '#475569', muted: '#94A3B8',
-  bg: '#F8FAFF', card: '#FFFFFF', border: '#DBEAFE',
-  success: '#059669', successBg: '#ECFDF5',
-  danger: '#DC2626', dangerBg: '#FEF2F2',
-  warning: '#D97706', warningBg: '#FFFBEB',
+  // 받아쓰기·듣기 연습 화면과 같은 색 (재생지 바탕 + 남색 + 잎사귀 초록)
+  primary: '#22406B', primaryDk: '#1A3254', primaryPl: '#E6ECF5',
+  dark: '#1D2A3A', mid: '#4B5563', muted: '#6B7280',
+  bg: '#F6F5EF', card: '#FFFFFF', border: '#DEDCD2',
+  success: '#1F8A4C', successBg: '#E1F3E7',
+  danger: '#C2412D', dangerBg: '#FBE7E2',
+  warning: '#B7791F', warningBg: '#FBF3E2',
+  leaf: '#2F7D4F', leafPl: '#E3F0E6',
 };
 
 // ── 채점 ──────────────────────────────────────────────────────────────────
@@ -361,7 +363,7 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
             {q.type === 'multiple' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
                 {(q.options || []).map((opt, oi) => (
-                  <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', borderRadius: 9, border: `1.5px solid ${answers[q.id] === oi ? C.primary : C.border}`, background: answers[q.id] === oi ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 13.5, lineHeight: 1.5 }}>
+                  <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', borderRadius: 9, border: `1.5px solid ${answers[q.id] === oi ? C.primary : C.border}`, background: answers[q.id] === oi ? C.primaryPl : '#FBFAF6', cursor: 'pointer', fontSize: 13.5, lineHeight: 1.5 }}>
                     <input type="radio" name={q.id} checked={answers[q.id] === oi} onChange={() => setAnswers(p => ({ ...p, [q.id]: oi }))} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
                     <span style={{ color: answers[q.id] === oi ? C.primary : C.dark }}>{'①②③④'[oi]} {opt}</span>
                   </label>
@@ -636,7 +638,7 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
                 <div style={{ background: C.successBg, border: '1px solid #6EE7B7', borderRadius: 9, padding: '11px 15px', marginBottom: 14, fontSize: 13, color: C.success }}>
                   ✅ <strong>{preview.title}</strong> — {preview.questions?.length}문항 / 커트라인 {preview.passing_score}점
                 </div>
-                <div style={{ background: '#F8FAFF', borderRadius: 10, padding: '12px 14px', border: `1px solid ${C.border}`, marginBottom: 14, maxHeight: 220, overflowY: 'auto' }}>
+                <div style={{ background: C.bg, borderRadius: 10, padding: '12px 14px', border: `1px solid ${C.border}`, marginBottom: 14, maxHeight: 220, overflowY: 'auto' }}>
                   {preview.questions?.map((q: Question, i: number) => (
                     <div key={q.id} style={{ display: 'flex', gap: 7, padding: '6px 0', borderBottom: i < preview.questions.length - 1 ? `1px solid ${C.border}` : 'none' }}>
                       <span style={{ background: C.primary, color: '#fff', borderRadius: 5, padding: '1px 7px', fontSize: 11, fontWeight: 600, flexShrink: 0 }}>Q{i + 1}</span>
@@ -848,61 +850,73 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
     else setPwErr('비밀번호가 올바르지 않습니다.');
   }
 
+  const menus: { step: string; icon: string; title: string; desc: string; onClick?: () => void; href?: string }[] = [
+    { step: '재시험', icon: '📝', title: '재시험 응시하기', desc: '시험 코드를 넣고 재시험을 봅니다', onClick: onStudent },
+    { step: '듣기 시험', icon: '🎧', title: '듣기 시험 응시', desc: '듣기 시험 코드를 넣고 응시합니다', onClick: onListening },
+    { step: '연습', icon: '🗣', title: '받아쓰기 · 듣기 연습', desc: '본문·대화문을 듣고 받아쓰며 연습합니다', href: '/practice' },
+  ];
+  const card: React.CSSProperties = { background: C.card, border: `1px solid ${C.border}`, borderRadius: 12 };
+
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column' }}>
-      <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 24px', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', color: C.dark }}>
+      <header style={{ padding: '14px max(16px, env(safe-area-inset-left, 0px))', display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 860, width: '100%', margin: '0 auto' }}>
         <SKLogo size="sm" />
-        <button onClick={() => setShowAdmin(v => !v)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 12, padding: '6px 10px' }}>관리자</button>
+        <button onClick={() => setShowAdmin(v => !v)} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13, padding: '6px 10px' }}>관리자</button>
       </header>
 
-      <div style={{ background: 'linear-gradient(135deg,#1A56DB 0%,#2563EB 50%,#1345B5 100%)', padding: '56px 24px 64px', textAlign: 'center', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: -60, right: -60, width: 200, height: 200, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.25)', borderRadius: 20, padding: '4px 14px', fontSize: 12, color: 'rgba(255,255,255,0.9)', marginBottom: 20, letterSpacing: '0.5px' }}>ONLINE RETEST PLATFORM</div>
-          <h1 style={{ margin: '0 0 12px', fontSize: 32, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px' }}>재시험 응시 시스템</h1>
-          <p style={{ margin: '0 0 36px', fontSize: 15, color: 'rgba(255,255,255,0.8)' }}>시험 코드를 입력하고 재시험을 응시하세요</p>
-          <button onClick={onStudent} style={{ background: '#fff', color: C.primary, border: 'none', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' }}>
-            📝 재시험 응시하기
-          </button>
-          <button onClick={onListening} style={{ marginTop: 12, background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, cursor: 'pointer' }}>
-            🎧 듣기 시험 응시
-          </button>
-          <div style={{ marginTop: 12 }}>
-            <a href="/practice" style={{ display: 'inline-block', background: 'rgba(255,255,255,0.15)', color: '#fff', border: '1.5px solid rgba(255,255,255,0.4)', borderRadius: 12, padding: '15px 36px', fontSize: 16, fontWeight: 700, textDecoration: 'none' }}>
-              🗣 받아쓰기 · 듣기 연습
-            </a>
-          </div>
+      <main style={{ maxWidth: 860, width: '100%', margin: '0 auto', padding: '20px max(16px, env(safe-area-inset-left, 0px)) 40px', flex: 1, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.leaf, letterSpacing: '.06em' }}>SK선경어학원 · 재시험 · 듣기 시험 · 받아쓰기 연습</div>
+          <h1 style={{ margin: 0, fontSize: 'clamp(26px,5vw,34px)', fontWeight: 900, lineHeight: 1.25 }}>
+            <span style={{ fontFamily: "'Lexend', system-ui, sans-serif", fontWeight: 600, color: C.primary }}>SK</span> 온라인 응시 시스템
+          </h1>
+          <div style={{ color: C.muted, fontSize: 14 }}>하고 싶은 것을 고르세요</div>
         </div>
-      </div>
 
-      <div style={{ padding: '32px 24px', maxWidth: 560, width: '100%', margin: '0 auto', flex: 1 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+          {menus.map(m => {
+            const inner = (
+              <>
+                <i style={{ fontStyle: 'normal', fontSize: 11, fontWeight: 700, color: C.leaf, letterSpacing: '.05em' }}>{m.step}</i>
+                <b style={{ fontSize: 17, display: 'flex', alignItems: 'center', gap: 8 }}><span aria-hidden="true">{m.icon}</span>{m.title}</b>
+                <small style={{ fontSize: 13, color: C.muted }}>{m.desc}</small>
+              </>
+            );
+            const st: React.CSSProperties = { ...card, display: 'flex', flexDirection: 'column', gap: 4, padding: '16px 16px', textAlign: 'left', cursor: 'pointer', color: C.dark, textDecoration: 'none', font: 'inherit' };
+            return m.href
+              ? <a key={m.title} href={m.href} style={st}>{inner}</a>
+              : <button key={m.title} onClick={m.onClick} style={st}>{inner}</button>;
+          })}
+        </div>
+
         {exams.length > 0 && (
-          <>
-            <p style={{ margin: '0 0 14px', fontSize: 13, fontWeight: 600, color: C.muted, letterSpacing: '0.5px' }}>진행 중인 시험</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: C.primary, paddingTop: 6 }}>진행 중인 시험</div>
             {exams.map(e => (
-              <div key={e.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', marginBottom: 10 }} onClick={onStudent}>
-                <div>
-                  <p style={{ margin: '0 0 3px', fontSize: 14, fontWeight: 600, color: C.dark }}>{e.title}</p>
-                  <p style={{ margin: 0, fontSize: 12, color: C.muted }}>{e.subject}</p>
+              <div key={e.id} style={{ ...card, padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={onStudent}>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ margin: '0 0 3px', fontSize: 15, fontWeight: 700, color: C.dark }}>{e.title}</p>
+                  <p style={{ margin: 0, fontSize: 13, color: C.muted }}>{e.subject}</p>
                 </div>
-                <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 7, padding: '4px 11px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace' }}>{e.code}</span>
+                <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 999, padding: '3px 12px', fontSize: 12, fontWeight: 700, fontFamily: "'Lexend', monospace", flexShrink: 0 }}>{e.code}</span>
               </div>
             ))}
-          </>
+          </div>
         )}
-        <div style={{ marginTop: 16, background: C.primaryPl, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px' }}>
-          <p style={{ margin: '0 0 10px', fontSize: 13, fontWeight: 600, color: C.primary }}>응시 방법</p>
-          {[['1', "위 '재시험 응시하기' 버튼을 탭하세요"], ['2', '이름과 시험 코드를 입력하세요'], ['3', '문제를 풀고 결과를 선생님께 전송하세요']].map(([n, t]) => (
-            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-              <div style={{ width: 20, height: 20, borderRadius: '50%', background: C.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{n}</div>
-              <span style={{ fontSize: 13, color: C.mid }}>{t}</span>
+
+        <div style={{ background: C.leafPl, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: C.mid }}>
+          <div style={{ fontWeight: 700, color: C.leaf, marginBottom: 6 }}>응시 방법</div>
+          {[['1', '위에서 재시험 또는 듣기 시험을 고르세요'], ['2', '이름과 시험 코드를 입력하세요'], ['3', '문제를 풀고 결과를 선생님께 전송하세요']].map(([n, t]) => (
+            <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', background: C.leaf, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{n}</div>
+              <span>{t}</span>
             </div>
           ))}
         </div>
-      </div>
+      </main>
 
       {showAdmin && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowAdmin(false)}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(29,42,58,0.5)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 100 }} onClick={() => setShowAdmin(false)}>
           <div style={{ background: C.card, borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: 480 }} onClick={e => e.stopPropagation()}>
             <div style={{ width: 36, height: 4, background: C.border, borderRadius: 2, margin: '0 auto 24px' }} />
             <p style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 700, color: C.dark }}>🔒 관리자 로그인</p>
@@ -915,8 +929,8 @@ function HomeScreen({ exams, onStudent, onAdmin, onListening }: { exams: Exam[];
       )}
 
       <footer style={{ borderTop: `1px solid ${C.border}`, padding: '16px 24px', textAlign: 'center' }}>
-        <SKLogo size="sm" />
-        <p style={{ margin: '8px 0 0', fontSize: 11, color: C.muted }}>© 2025 SK선경어학원 · Retest Platform</p>
+        <div style={{ display: 'inline-block' }}><SKLogo size="sm" /></div>
+        <p style={{ margin: '8px 0 0', fontSize: 11, color: C.muted }}>© 2025 SK선경어학원 · SK 온라인 응시 시스템</p>
       </footer>
     </div>
   );
@@ -1229,7 +1243,7 @@ function handlePlayAudio(question: ListeningQuestion) {
                     const val = String(n);
                     const selected = answers[q.id] === val;
                     return (
-                      <button key={n} onClick={() => handleAnswer(q.id, val)} style={{ padding: '14px 0', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primary : '#FAFBFF', color: selected ? '#fff' : C.dark, fontSize: 20, fontWeight: 700, cursor: 'pointer' }}>
+                      <button key={n} onClick={() => handleAnswer(q.id, val)} style={{ padding: '14px 0', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primary : '#FBFAF6', color: selected ? '#fff' : C.dark, fontSize: 20, fontWeight: 700, cursor: 'pointer' }}>
                         {'①②③④⑤'[n - 1]}
                       </button>
                     );
@@ -1245,7 +1259,7 @@ function handlePlayAudio(question: ListeningQuestion) {
                   const val = String(oi + 1);
                   const selected = answers[q.id] === val;
                   return (
-                    <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14, lineHeight: 1.5 }}>
+                    <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FBFAF6', cursor: 'pointer', fontSize: 14, lineHeight: 1.5 }}>
                       <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
                       <span style={{ color: selected ? C.primary : C.dark }}>{'①②③④⑤'[oi]} {opt}</span>
                     </label>
@@ -1263,7 +1277,7 @@ function handlePlayAudio(question: ListeningQuestion) {
                       const val = String(ii + 1);
                       const selected = answers[q.id] === val;
                       return (
-                        <button key={ii} onClick={() => handleAnswer(q.id, val)} style={{ padding: 10, borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <button key={ii} onClick={() => handleAnswer(q.id, val)} style={{ padding: 10, borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FBFAF6', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 12, fontWeight: 700, color: selected ? C.primary : C.mid }}>{'①②③④⑤'[ii]}</span>
                           <img src={url} alt={`선택지 ${ii + 1}`} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', borderRadius: 6 }} />
                         </button>
@@ -1276,7 +1290,7 @@ function handlePlayAudio(question: ListeningQuestion) {
                       const val = String(oi + 1);
                       const selected = answers[q.id] === val;
                       return (
-                        <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14 }}>
+                        <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FBFAF6', cursor: 'pointer', fontSize: 14 }}>
                           <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
                           <span style={{ color: selected ? C.primary : C.dark }}>{'①②③④⑤'[oi]} {opt}</span>
                         </label>
@@ -1302,7 +1316,7 @@ function handlePlayAudio(question: ListeningQuestion) {
                     const val = String(oi + 1);
                     const selected = answers[q.id] === val;
                     return (
-                      <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FAFBFF', cursor: 'pointer', fontSize: 14 }}>
+                      <label key={oi} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderRadius: 10, border: `1.5px solid ${selected ? C.primary : C.border}`, background: selected ? C.primaryPl : '#FBFAF6', cursor: 'pointer', fontSize: 14 }}>
                         <input type="radio" name={q.id} checked={selected} onChange={() => handleAnswer(q.id, val)} style={{ accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
                         <span style={{ color: selected ? C.primary : C.dark, fontWeight: 600 }}>{'①②③④⑤'[oi]} {opt}</span>
                       </label>
@@ -1469,7 +1483,7 @@ function handlePlayAudio(question: ListeningQuestion) {
 
                       {/* 해설 */}
                       {q.explanation && (
-                        <div style={{ background: C.primaryPl, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#1e3a8a', lineHeight: 1.6 }}>
+                        <div style={{ background: C.primaryPl, borderRadius: 8, padding: '10px 12px', fontSize: 12, color: C.primary, lineHeight: 1.6 }}>
                           <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', fontWeight: 700, marginBottom: 4 }}>💡 해설</div>
                           {q.explanation}
                         </div>

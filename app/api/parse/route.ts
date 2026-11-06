@@ -3,20 +3,27 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-export async function POST(req: NextRequest) {
-  const { text, fileName } = await req.json();
+// 스캔 PDF는 AI가 그림을 읽느라 시간이 더 걸려서 최대 60초까지 기다림
+export const maxDuration = 60;
 
-  if (!text || text.length < 30) {
+export async function POST(req: NextRequest) {
+  const { text, pdfBase64, fileName } = await req.json();
+  const isPdf = typeof pdfBase64 === 'string' && pdfBase64.length > 0;
+
+  if (!isPdf && (!text || text.length < 30)) {
     return NextResponse.json({ error: '텍스트가 너무 짧습니다.' }, { status: 400 });
   }
 
-  const prompt = `다음은 학원 영어 독해 재시험지에서 추출한 텍스트입니다.
-이 텍스트를 분석하여 시험 정보와 문제들을 JSON 형식으로 추출해주세요.
+  const prompt = `다음은 학원 영어 독해 재시험지${isPdf ? '(첨부한 PDF 파일)' : '에서 추출한 텍스트'}입니다.
+이 ${isPdf ? '시험지' : '텍스트'}를 분석하여 시험 정보와 문제들을 JSON 형식으로 추출해주세요.
 JSON만 출력하세요. 설명, 마크다운 코드블록 없이 { 로 시작해서 } 로 끝내세요.
-
+${isPdf ? `
+[파일 이름]
+${fileName || ''}
+` : `
 [추출된 텍스트]
 ${text.slice(0, 8000)}
-
+`}
 [출력 형식]
 {
   "title": "시험 제목 (예: [1P 독해] 03.30~04.04 재시험)",
@@ -62,7 +69,16 @@ ${text.slice(0, 8000)}
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 3000,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{
+        role: 'user',
+        // PDF는 파일째 보냄(스캔본도 읽을 수 있음). SDK 0.24 타입에 document가 없어서 any로 넘김
+        content: (isPdf
+          ? [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+              { type: 'text', text: prompt },
+            ]
+          : prompt) as any,
+      }],
     });
 
     const content = message.content[0].type === 'text' ? message.content[0].text : '';

@@ -1,0 +1,76 @@
+/* 독해 재시험 화면 — 받아쓰기·듣기 연습(practice.css)의 .pp 토큰을 그대로 쓰고, 재시험에만 필요한 부분만 더함 */
+.pp{--warn-soft:#FBF3E2}
+@media (prefers-color-scheme:dark){.pp:not([data-theme="light"]){--warn-soft:#352B19}}
+.pp[data-theme="dark"]{--warn-soft:#352B19}
+
+.pp .topnav button{font:inherit;font-size:13px;background:none;border:0;padding:0;color:var(--navy);font-weight:700;cursor:pointer}
+.pp .topnav .who{color:var(--mute);font-weight:500}
+
+/* 입력칸 (globals.css 기본값을 연습 화면 모양으로) */
+.pp .fld{display:flex;flex-direction:column;gap:6px}
+.pp .fld label{font-size:13px;font-weight:700;color:var(--mute)}
+.pp .inp{font:inherit;font-size:16px;width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);color:var(--ink)}
+.pp .inp.code{font-family:var(--en);letter-spacing:.06em;text-transform:uppercase}
+.pp .inp.ans{font-family:'Lexend','Noto Sans KR',sans-serif;font-size:17px}
+.pp .inp:focus{border-color:var(--navy)}
+.pp textarea.ans{font-family:'Lexend','Noto Sans KR',sans-serif}
+
+/* 버튼 */
+.pp .btn.block{width:100%;padding:13px 16px;font-size:15px;display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none}
+.pp .btn.big{font-size:16px;padding:14px 16px}
+.pp .btn:disabled{opacity:.6;cursor:default}
+.pp .btn.sm{font-size:13px;padding:6px 12px}
+
+/* 등록된 시험 목록 */
+.pp .exam{display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:left;font:inherit;width:100%;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer}
+.pp .exam:hover{border-color:var(--leaf);box-shadow:inset 0 0 0 1px var(--leaf)}
+.pp .exam b{display:block;font-size:15px}
+.pp .exam small{font-size:13px;color:var(--mute)}
+.pp .code-chip{font-family:var(--en);font-weight:600;font-size:12px;letter-spacing:.04em;padding:3px 12px;border-radius:999px;background:var(--navy-soft);color:var(--navy);flex:none}
+
+/* 진행 막대 (시험 중 위에 붙어 있음) */
+.pp .sticky{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 0;margin:-10px 0;display:flex;flex-direction:column;gap:8px}
+.pp .prog{height:6px;border-radius:999px;background:var(--line);overflow:hidden}
+.pp .prog i{display:block;height:100%;background:var(--leaf);border-radius:999px;transition:width .3s}
+
+/* 지문 */
+.pp .passage{font-family:'Lexend','Noto Sans KR',sans-serif;font-size:17px;line-height:1.75;white-space:pre-line;overflow-wrap:anywhere}
+
+/* 문항 */
+.pp .qt{white-space:pre-line;overflow-wrap:anywhere}
+.pp .ch label{background:var(--paper);line-height:1.5}
+.pp .ch label.sel{border-color:var(--navy);background:var(--navy-soft);box-shadow:inset 0 0 0 1px var(--navy)}
+.pp .ch .opt{font-family:'Lexend','Noto Sans KR',sans-serif;font-size:16px;overflow-wrap:anywhere}
+
+/* 결과 */
+.pp .hero{align-items:center;text-align:center;gap:6px;padding:22px 16px}
+.pp .hero.ok{border-color:var(--ok);box-shadow:inset 0 0 0 1px var(--ok)}
+.pp .hero.bad{border-color:var(--bad);box-shadow:inset 0 0 0 1px var(--bad)}
+.pp .verdict{font-size:14px;font-weight:700;padding:4px 16px;border-radius:999px}
+.pp .verdict.ok{background:var(--ok-soft);color:var(--ok)}
+.pp .verdict.bad{background:var(--bad-soft);color:var(--bad)}
+.pp .big-score{font-family:var(--en);font-weight:600;font-size:56px;line-height:1.1;font-variant-numeric:tabular-nums}
+.pp .big-score small{font-size:20px;color:var(--mute);font-weight:500;margin-left:4px}
+.pp .hero.ok .big-score{color:var(--ok)}
+.pp .hero.bad .big-score{color:var(--bad)}
+.pp .ph{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.pp .ph b{font-size:14px;color:var(--navy)}
+.pp .rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px}
+.pp .rcell{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:10px;font-size:13px;font-variant-numeric:tabular-nums}
+.pp .rcell.ok{background:var(--ok-soft)}
+.pp .rcell.bad{background:var(--bad-soft)}
+.pp .rcell span{font-family:var(--en);font-weight:600}
+.pp .rcell b{font-weight:700}
+.pp .rcell.ok b{color:var(--ok)}
+.pp .rcell.bad b{color:var(--bad)}
+.pp .rq{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.pp .rq.ok{border-color:var(--ok)}
+.pp .rq.bad{border-color:var(--bad)}
+.pp .rq .rcell{border-radius:0}
+.pp .exp{padding:10px 12px;background:var(--warn-soft);font-size:14px;line-height:1.7;white-space:pre-line}
+.pp .exp b{display:block;font-size:12px;color:var(--warn);margin-bottom:2px}
+.pp .sum{display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--line);font-size:14px;color:var(--mute)}
+.pp .sum b{color:var(--ink)}
+.pp .alert{font-size:13px;color:var(--bad);background:var(--bad-soft);border-radius:10px;padding:10px 12px;text-align:center}
+.pp .center{text-align:center;align-items:center}
+.pp h1, .pp .qt, .pp .sub, .pp .note{word-break:keep-all;overflow-wrap:anywhere}

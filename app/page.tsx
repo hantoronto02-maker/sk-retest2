@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import './practice/practice.css';
+import './retest.css';
 import type { Exam, Question, Result, ResultDetail, ListeningTest, ListeningQuestion } from '@/lib/supabase';
 
-const KAKAO_LINK = process.env.NEXT_PUBLIC_KAKAO_LINK || 'https://open.kakao.com/o/gX01CYoi';
-const KAKAO_PW = process.env.NEXT_PUBLIC_KAKAO_PASSWORD || '4321';
 
 const C = {
   // 받아쓰기·듣기 연습 화면과 같은 색 (재생지 바탕 + 남색 + 잎사귀 초록)
@@ -38,6 +38,47 @@ function gradeAnswers(questions: Question[], answers: Record<string, any>) {
   return { total, maxScore, details };
 }
 
+// ── PDF 읽기 도우미 (관리자 시험 등록용) ───────────────────────────────────
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174';
+async function extractPdfText(file: File): Promise<string> {
+  const w = window as any;
+  if (!w.pdfjsLib) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = `${PDFJS}/pdf.min.js`;
+      s.onload = res; s.onerror = rej; document.head.appendChild(s);
+    });
+  }
+  const lib = w.pdfjsLib;
+  lib.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.js`;
+  const pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages: string[] = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const tc = await page.getTextContent();
+    let line = '', lastY: number | null = null, lastX = 0; const lines: string[] = [];
+    for (const it of tc.items as any[]) {
+      if (typeof it.str !== 'string') continue;
+      const x = it.transform?.[4] ?? 0, y = Math.round(it.transform?.[5] ?? 0);
+      if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(line.trim()); line = ''; }
+      else if (line && !/\s$/.test(line) && !/^\s/.test(it.str) && x - lastX > 1) line += ' ';
+      line += it.str;
+      lastY = y; lastX = x + (it.width || 0);
+    }
+    if (line.trim()) lines.push(line.trim());
+    pages.push(lines.filter(Boolean).join('\n'));
+  }
+  return pages.join('\n\n');
+}
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] || '');
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
 // ── SK 로고 ───────────────────────────────────────────────────────────────
 function SKLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
   const s = size === 'sm'
@@ -57,12 +98,14 @@ function SKLogo({ size = 'md' }: { size?: 'sm' | 'md' }) {
 }
 
 // ── 결과 화면 ─────────────────────────────────────────────────────────────
+// 디자인: 받아쓰기·듣기 연습 화면(practice.css, retest.css의 .pp 규칙)과 같은 모양
 function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any; name: string; onHome: () => void }) {
   const resultRef = useRef<HTMLDivElement>(null);
   const [capturing, setCapturing] = useState(false);
-  const [textCopied, setTextCopied] = useState(false);
   const [showExplanations, setShowExplanations] = useState(false);
   const hasExplanations = exam.questions.some((q: Question) => q.explanation);
+  const ok = !!result.passed;
+  const nRight = result.details.filter((d: ResultDetail) => d.correct).length;
 
   const resultText = [
     `[SK선경어학원 재시험 결과]`,
@@ -76,15 +119,6 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
     ...result.details.map((d: ResultDetail, i: number) => `  Q${i + 1}: ${d.correct ? `정답 (+${d.points}점)` : '오답'}`),
   ].join('\n');
 
-  function copyText() {
-    navigator.clipboard.writeText(resultText).catch(() => {
-      const t = document.createElement('textarea');
-      t.value = resultText; document.body.appendChild(t); t.select();
-      document.execCommand('copy'); document.body.removeChild(t);
-    });
-    setTextCopied(true); setTimeout(() => setTextCopied(false), 3000);
-  }
-
   async function captureImage() {
     setCapturing(true);
     try {
@@ -95,7 +129,9 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
           s.onload = res; s.onerror = rej; document.head.appendChild(s);
         });
       }
-      const canvas = await (window as any).html2canvas(resultRef.current, { scale: 2, backgroundColor: C.bg });
+      const el = resultRef.current!;
+      const bg = getComputedStyle(el.closest('.pp') || el).backgroundColor || C.bg;
+      const canvas = await (window as any).html2canvas(el, { scale: 2, backgroundColor: bg });
       const a = document.createElement('a');
       a.download = `재시험결과_${name}_${exam.code}.png`;
       a.href = canvas.toDataURL('image/png'); a.click();
@@ -109,97 +145,71 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg }}>
-      <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center' }}>
-        <SKLogo size="sm" />
-      </header>
-      <div style={{ maxWidth: 520, margin: '0 auto', padding: '24px 16px' }}>
-        <div ref={resultRef} style={{ background: C.bg, paddingBottom: 16 }}>
-          <div style={{ background: result.passed ? C.success : C.danger, borderRadius: 18, padding: '28px 22px', textAlign: 'center', color: '#fff', marginBottom: 16 }}>
-            <div style={{ fontSize: 10, opacity: .8, letterSpacing: '1px', marginBottom: 8 }}>SK선경어학원 재시험</div>
-            <div style={{ fontSize: 48, marginBottom: 8 }}>{result.passed ? '🎉' : '😓'}</div>
-            <div style={{ fontSize: 13, opacity: .85, marginBottom: 4 }}>{name} · {exam.title}</div>
-            <h2 style={{ margin: '4px 0', fontSize: 36, fontWeight: 800 }}>{result.total}점</h2>
-            <div style={{ fontSize: 13, opacity: .8 }}>총 {result.maxScore}점 | 커트라인 {exam.passing_score}점</div>
-            <div style={{ marginTop: 14, display: 'inline-block', background: 'rgba(255,255,255,0.22)', borderRadius: 20, padding: '6px 22px', fontSize: 15, fontWeight: 700 }}>
-              {result.passed ? '합격 ✓' : '불합격 — 재도전 필요'}
-            </div>
+    <div className="pp">
+      <div className="wrap">
+        <div ref={resultRef} style={{ display: 'flex', flexDirection: 'column', gap: 14, background: 'var(--bg)', padding: '4px 0 8px' }}>
+          <header>
+            <div className="kick">SK선경어학원 · 재시험 결과</div>
+            <h1><span>{name}</span> {exam.title}</h1>
+            <div className="sub">제출 {new Date().toLocaleString('ko-KR')}</div>
+          </header>
+
+          <div className={`panel hero ${ok ? 'ok' : 'bad'}`}>
+            <div className={`verdict ${ok ? 'ok' : 'bad'}`}>{ok ? '합격' : '불합격 · 재도전 필요'}</div>
+            <div className="big-score">{result.total}<small>/ {result.maxScore}점</small></div>
+            <div className="sub">커트라인 {exam.passing_score}점</div>
           </div>
-          <div style={{ background: C.card, borderRadius: 14, padding: 18, border: `1px solid ${C.border}` }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.mid }}>문항별 결과</p>
+
+          <div className="panel">
+            <div className="ph">
+              <b>문항별 결과</b>
               {hasExplanations && (
-                <button onClick={() => setShowExplanations(v => !v)} style={{ background: C.primaryPl, color: C.primary, border: `1px solid ${C.border}`, borderRadius: 8, padding: '4px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  {showExplanations ? '해설 접기 ▲' : '📖 해설 보기 ▼'}
+                <button className="btn ghost sm" onClick={() => setShowExplanations(v => !v)}>
+                  {showExplanations ? '해설 접기' : '해설 보기'}
                 </button>
               )}
             </div>
             {!showExplanations ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div className="rgrid">
                 {result.details.map((d: ResultDetail, i: number) => (
-                  <div key={d.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', borderRadius: 9, background: d.correct ? C.successBg : C.dangerBg }}>
-                    <span style={{ color: C.dark, fontWeight: 500, fontSize: 13 }}>Q{i + 1}</span>
-                    <span style={{ fontWeight: 700, color: d.correct ? C.success : C.danger, fontSize: 13 }}>{d.correct ? `+${d.points}점` : '오답'}</span>
+                  <div key={d.id} className={`rcell ${d.correct ? 'ok' : 'bad'}`}>
+                    <span>Q{i + 1}</span>
+                    <b>{d.correct ? `+${d.points}점` : '오답'}</b>
                   </div>
                 ))}
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="list" style={{ gap: 8 }}>
                 {result.details.map((d: ResultDetail, i: number) => {
                   const q = exam.questions[i];
                   return (
-                    <div key={d.id} style={{ borderRadius: 10, border: `1px solid ${d.correct ? '#6EE7B7' : '#FCA5A5'}`, overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: d.correct ? C.successBg : C.dangerBg }}>
-                        <span style={{ color: C.dark, fontWeight: 600, fontSize: 13 }}>Q{i + 1}</span>
-                        <span style={{ fontWeight: 700, color: d.correct ? C.success : C.danger, fontSize: 13 }}>{d.correct ? `+${d.points}점 정답` : '오답'}</span>
+                    <div key={d.id} className={`rq ${d.correct ? 'ok' : 'bad'}`}>
+                      <div className={`rcell ${d.correct ? 'ok' : 'bad'}`}>
+                        <span>Q{i + 1}</span>
+                        <b>{d.correct ? `+${d.points}점 정답` : '오답'}</b>
                       </div>
                       {!d.correct && q?.explanation && (
-                        <div style={{ padding: '10px 12px', background: '#FFFBEB', borderTop: '1px solid #FCD34D' }}>
-                          <p style={{ margin: 0, fontSize: 12, color: '#92400E', fontWeight: 600, marginBottom: 4 }}>📖 해설</p>
-                          <p style={{ margin: 0, fontSize: 13, color: '#78350F', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{q.explanation}</p>
-                        </div>
+                        <div className="exp"><b>해설</b>{q.explanation}</div>
                       )}
                     </div>
                   );
                 })}
               </div>
             )}
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
-              <span style={{ color: C.mid }}>정답 {result.details.filter((d: ResultDetail) => d.correct).length}개 / 오답 {result.details.filter((d: ResultDetail) => !d.correct).length}개</span>
-              <span style={{ fontWeight: 700, color: C.dark }}>{result.total}점</span>
+            <div className="sum">
+              <span>정답 {nRight}개 · 오답 {result.details.length - nRight}개</span>
+              <b>{result.total}점</b>
             </div>
           </div>
-          <p style={{ textAlign: 'center', fontSize: 11, color: C.muted, marginTop: 10 }}>제출: {new Date().toLocaleString('ko-KR')}</p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
-          {/* 카카오톡 2단계 */}
-          <div style={{ background: C.warningBg, border: `1px solid #FCD34D`, borderRadius: 12, padding: '16px 18px' }}>
-            <p style={{ margin: '0 0 12px', fontSize: 13, fontWeight: 700, color: '#92400E' }}>💬 카카오톡으로 선생님께 결과 전송</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <button onClick={copyText} style={{ width: '100%', padding: '11px', background: textCopied ? C.success : C.primary, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                {textCopied ? '✅ 복사됨! 아래 링크를 탭하세요' : '① 결과 텍스트 복사하기'}
-              </button>
-              <a href={KAKAO_LINK} target="_blank" rel="noopener noreferrer" style={{ width: '100%', padding: '11px', background: '#FEE500', color: '#3C1E1E', border: 'none', borderRadius: 9, fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, textDecoration: 'none' }}>
-                💬 ② 오픈채팅방 입장 (비밀번호: {KAKAO_PW})
-              </a>
-            </div>
-            <p style={{ margin: '10px 0 0', fontSize: 12, color: '#92400E', lineHeight: 1.6 }}>채팅방 입장 후 입력창을 길게 눌러 <strong>붙여넣기</strong>하세요.</p>
-          </div>
+        <button className="btn ghost block" onClick={captureImage} disabled={capturing}>
+          {capturing ? '저장 중...' : '결과 이미지 저장'}
+        </button>
 
-          {/* 이미지 저장 */}
-          <button onClick={captureImage} disabled={capturing} style={{ width: '100%', padding: '14px', background: C.primary, color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 15, cursor: 'pointer', opacity: capturing ? .7 : 1 }}>
-            📸 {capturing ? '저장 중...' : '결과 이미지 저장'}
-          </button>
+        <div className="alert">이 시험은 <b>1회만 응시</b>할 수 있습니다. 결과는 선생님께 자동으로 전달됩니다.</div>
 
-          <div style={{ background: C.dangerBg, border: `1px solid #FCA5A5`, borderRadius: 10, padding: '12px 14px', fontSize: 13, color: C.danger, textAlign: 'center' }}>
-            ⚠ 이 시험은 <strong>1회만 응시</strong>할 수 있습니다. 반드시 결과를 전송하거나 저장하세요.
-          </div>
-
-          <button onClick={onHome} style={{ width: '100%', padding: '12px', background: 'none', border: `1px solid ${C.border}`, borderRadius: 12, fontWeight: 600, fontSize: 14, cursor: 'pointer', color: C.mid }}>
-            홈으로
-          </button>
-        </div>
+        <button className="btn ghost block" onClick={onHome}>홈으로</button>
       </div>
     </div>
   );
@@ -225,6 +235,7 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
     if (!found) { setError(`"${code}" 코드의 시험을 찾을 수 없습니다.`); return; }
     // 중복 제출은 제출 시점에 서버에서 체크
     setExam(found); setStep('test'); setError('');
+    window.scrollTo(0, 0);
   }
 
   async function handleSubmit() {
@@ -264,6 +275,7 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
 
       setResult(finalResult);
       setStep('result');
+      window.scrollTo(0, 0);
     } catch (err: any) {
       console.error('제출 오류:', err);
       alert(`제출 중 오류: ${err.message}`);
@@ -272,18 +284,18 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   }
 
   if (step === 'already') return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column' }}>
-      <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <SKLogo size="sm" />
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13 }}>← 홈</button>
-      </header>
-      <div style={{ maxWidth: 420, margin: '60px auto', padding: '0 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: 52, marginBottom: 16 }}>🔒</div>
-        <h2 style={{ fontSize: 20, fontWeight: 700, color: C.dark, margin: '0 0 10px' }}>이미 제출한 시험입니다</h2>
-        <p style={{ fontSize: 14, color: C.mid, lineHeight: 1.7, margin: '0 0 24px' }}>
-          <strong>{name}</strong>님은 이미 제출하셨습니다.<br />재응시는 불가합니다. 결과는 선생님께 문의하세요.
-        </p>
-        <button onClick={onBack} style={{ padding: '12px 28px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>홈으로</button>
+    <div className="pp">
+      <div className="wrap">
+        <div className="topnav"><button onClick={onBack}>← SK선경어학원 홈</button></div>
+        <header>
+          <div className="kick">SK선경어학원 · 재시험</div>
+          <h1>이미 제출한 시험입니다</h1>
+          <div className="sub">재시험은 한 번만 볼 수 있습니다</div>
+        </header>
+        <div className="panel">
+          <div><b>{name}</b> 학생은 이 시험을 이미 제출했습니다. 다시 볼 수 없으니, 결과는 선생님께 물어보세요.</div>
+          <div><button className="btn" onClick={onBack}>홈으로</button></div>
+        </div>
       </div>
     </div>
   );
@@ -293,32 +305,38 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   );
 
   if (step === 'login') return (
-    <div style={{ minHeight: '100vh', background: C.bg }}>
-      <header style={{ background: C.card, borderBottom: `1px solid ${C.border}`, padding: '0 20px', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <SKLogo size="sm" />
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: C.muted, cursor: 'pointer', fontSize: 13 }}>← 홈</button>
-      </header>
-      <div style={{ maxWidth: 440, margin: '48px auto 0', padding: '0 20px' }}>
-        <h2 style={{ margin: '0 0 6px', fontSize: 22, fontWeight: 700, color: C.dark }}>재시험 응시</h2>
-        <p style={{ margin: '0 0 28px', color: C.muted, fontSize: 14 }}>이름과 시험 코드를 입력하세요</p>
-        <div style={{ background: C.card, borderRadius: 16, padding: 24, border: `1px solid ${C.border}` }}>
-          {error && <div style={{ background: C.dangerBg, borderRadius: 9, padding: '10px 14px', marginBottom: 14, color: C.danger, fontSize: 14 }}>{error}</div>}
-          <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>이름</label>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" style={{ marginBottom: 16 }} />
-          <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 13, color: C.mid }}>시험 코드</label>
-          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="1P01" onKeyDown={e => e.key === 'Enter' && handleStart()} style={{ marginBottom: 22, fontFamily: 'monospace' }} />
-          <button onClick={handleStart} style={{ width: '100%', padding: '13px', background: C.primary, color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: 16, cursor: 'pointer' }}>
-            시험 시작 →
-          </button>
+    <div className="pp">
+      <div className="wrap">
+        <div className="topnav"><button onClick={onBack}>← SK선경어학원 홈</button></div>
+        <header>
+          <div className="kick">SK선경어학원 · 독해 재시험</div>
+          <h1><span>Retest</span> 재시험 응시하기</h1>
+          <div className="sub">이름과 시험 코드를 입력하세요</div>
+        </header>
+        <div className="panel">
+          {error && <div className="err">{error}</div>}
+          <div className="fld">
+            <label htmlFor="rt-name">이름</label>
+            <input id="rt-name" className="inp" value={name} onChange={e => setName(e.target.value)} placeholder="홍길동" autoComplete="off" />
+          </div>
+          <div className="fld">
+            <label htmlFor="rt-code">시험 코드</label>
+            <input id="rt-code" className="inp code" value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="1P01" autoComplete="off" autoCapitalize="characters" spellCheck={false} onKeyDown={e => e.key === 'Enter' && handleStart()} />
+          </div>
+          <button className="btn leaf block big" onClick={handleStart}>시험 시작 →</button>
         </div>
+        <div className="note">재시험은 <b>한 번만</b> 제출할 수 있습니다. 모든 문제를 풀고 맨 아래 &lsquo;최종 제출하기&rsquo;를 누르세요.</div>
         {exams.length > 0 && (
-          <div style={{ marginTop: 16, background: C.primaryPl, borderRadius: 12, padding: '14px 16px', border: `1px solid ${C.border}` }}>
-            <p style={{ margin: '0 0 8px', fontSize: 12, color: C.primary, fontWeight: 600 }}>등록된 시험</p>
+          <div className="list">
+            <div className="sec-h">등록된 시험<span>누르면 코드가 들어갑니다</span></div>
             {exams.map(e => (
-              <div key={e.id} style={{ fontSize: 13, color: C.dark, padding: '3px 0', display: 'flex', justifyContent: 'space-between' }}>
-                <span>{e.title}</span>
-                <strong style={{ fontFamily: 'monospace', color: C.primary }}>{e.code}</strong>
-              </div>
+              <button key={e.id} className="exam" onClick={() => { setCode(e.code); setError(''); }}>
+                <div style={{ minWidth: 0 }}>
+                  <b>{e.title}</b>
+                  {e.subject && <small>{e.subject}</small>}
+                </div>
+                <span className="code-chip">{e.code}</span>
+              </button>
             ))}
           </div>
         )}
@@ -327,59 +345,68 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   );
 
   // 시험 화면
+  const total = exam!.questions.reduce((s, q) => s + q.points, 0);
+  const n = exam!.questions.length;
+  const left = n - completed;
   return (
-    <div style={{ minHeight: '100vh', background: C.bg }}>
-      <header style={{ background: C.primary, padding: '14px 20px 16px' }}>
-        <SKLogo size="sm" />
-        <div style={{ marginTop: 10 }}>
-          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#fff' }}>{exam!.title}</p>
-          <p style={{ margin: '3px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.75)' }}>커트라인 {exam!.passing_score}점 | 총 {exam!.questions.reduce((s, q) => s + q.points, 0)}점</p>
-        </div>
-        <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.2)', borderRadius: 4, height: 5 }}>
-          <div style={{ height: '100%', background: '#fff', borderRadius: 4, width: `${(completed / exam!.questions.length) * 100}%`, transition: 'width .3s' }} />
-        </div>
-        <p style={{ margin: '5px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.65)' }}>{completed}/{exam!.questions.length} 완료</p>
-      </header>
-      <div style={{ maxWidth: 700, margin: '0 auto', padding: '20px 16px' }}>
-        {exam!.passage && (
-          <div style={{ marginBottom: 16 }}>
-            <button onClick={() => setShowPassage(v => !v)} style={{ background: C.primaryPl, border: `1px solid ${C.border}`, borderRadius: 9, padding: '8px 14px', color: C.primary, fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-              📖 지문 {showPassage ? '접기 ▲' : '보기 ▼'}
-            </button>
-            {showPassage && (
-              <div style={{ background: C.primaryPl, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px', fontSize: 14, lineHeight: 1.85, color: C.dark, whiteSpace: 'pre-line' }}>
-                {exam!.passage}
-              </div>
+    <div className="pp">
+      <div className="wrap">
+        <div className="topnav"><span className="who">{name} 학생</span></div>
+        <header>
+          <div className="kick">SK선경어학원 · 독해 재시험{exam!.subject ? ` · ${exam!.subject}` : ''}</div>
+          <h1><span>{exam!.code}</span> {exam!.title}</h1>
+          <div className="sub">커트라인 {exam!.passing_score}점 · 총 {total}점 · {n}문항</div>
+        </header>
+
+        <div className="sticky">
+          <div className="bar">
+            <div className="score"><b>{completed}</b> / {n} 문항 풀었음</div>
+            {exam!.passage && (
+              <button className="btn ghost sm" onClick={() => setShowPassage(v => !v)} aria-expanded={showPassage}>
+                지문 {showPassage ? '접기' : '보기'}
+              </button>
             )}
           </div>
+          <div className="prog" role="progressbar" aria-valuemin={0} aria-valuemax={n} aria-valuenow={completed}><i style={{ width: `${(completed / n) * 100}%` }} /></div>
+        </div>
+
+        {exam!.passage && showPassage && (
+          <div className="panel"><div className="passage">{exam!.passage}</div></div>
         )}
-        {exam!.questions.map((q, i) => (
-          <div key={q.id} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: '16px 18px', marginBottom: 11 }}>
-            <div style={{ display: 'flex', gap: 7, marginBottom: 10 }}>
-              <span style={{ background: C.primary, color: '#fff', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700 }}>Q{i + 1}</span>
-              <span style={{ background: C.primaryPl, color: C.primary, borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600 }}>{q.points}점</span>
-            </div>
-            <p style={{ margin: '0 0 12px', fontWeight: 600, fontSize: 14, lineHeight: 1.7, color: C.dark, whiteSpace: 'pre-line' }}>{q.text}</p>
-            {q.type === 'multiple' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {(q.options || []).map((opt, oi) => (
-                  <label key={oi} style={{ display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 13px', borderRadius: 9, border: `1.5px solid ${answers[q.id] === oi ? C.primary : C.border}`, background: answers[q.id] === oi ? C.primaryPl : '#FBFAF6', cursor: 'pointer', fontSize: 13.5, lineHeight: 1.5 }}>
-                    <input type="radio" name={q.id} checked={answers[q.id] === oi} onChange={() => setAnswers(p => ({ ...p, [q.id]: oi }))} style={{ marginTop: 2, accentColor: C.primary, flexShrink: 0, width: 'auto', padding: 0, border: 'none' }} />
-                    <span style={{ color: answers[q.id] === oi ? C.primary : C.dark }}>{'①②③④'[oi]} {opt}</span>
-                  </label>
-                ))}
+
+        <div className="list">
+          {exam!.questions.map((q, i) => (
+            <div key={q.id} className="q">
+              <div className="qh">
+                <div className="qn">{i + 1}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="qt">{q.text}</div>
+                  <div className="qsrc">{q.points}점{q.type === 'fill' ? ' · 빈칸 쓰기' : q.type === 'short' ? ' · 서술형' : ''}</div>
+                </div>
               </div>
-            )}
-            {q.type === 'fill' && (
-              <input value={answers[q.id] || ''} onChange={e => setAnswers(p => ({ ...p, [q.id]: e.target.value }))} placeholder="답을 입력하세요" />
-            )}
-            {q.type === 'short' && (
-              <textarea value={answers[q.id] || ''} onChange={e => setAnswers(p => ({ ...p, [q.id]: e.target.value }))} rows={3} style={{ resize: 'vertical' }} />
-            )}
-          </div>
-        ))}
-        <button onClick={handleSubmit} disabled={submitting} style={{ width: '100%', padding: '14px', background: completed < exam!.questions.length ? '#64748B' : C.success, color: '#fff', border: 'none', borderRadius: 12, fontWeight: 700, fontSize: 16, cursor: 'pointer', opacity: submitting ? .7 : 1 }}>
-          {submitting ? '제출 중...' : completed < exam!.questions.length ? `미답 ${exam!.questions.length - completed}문항 — 제출` : '✓ 최종 제출하기'}
+              {q.type === 'multiple' && (
+                <div className="ch" role="radiogroup">
+                  {(q.options || []).map((opt, oi) => (
+                    <label key={oi} className={answers[q.id] === oi ? 'sel' : ''}>
+                      <input type="radio" name={q.id} checked={answers[q.id] === oi} onChange={() => setAnswers(p => ({ ...p, [q.id]: oi }))} />
+                      <span className="opt">{'①②③④⑤'[oi]} {opt}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+              {q.type === 'fill' && (
+                <input className="inp ans" value={answers[q.id] || ''} onChange={e => setAnswers(p => ({ ...p, [q.id]: e.target.value }))} placeholder="답을 입력하세요" autoComplete="off" autoCapitalize="off" spellCheck={false} />
+              )}
+              {q.type === 'short' && (
+                <textarea className="ans" value={answers[q.id] || ''} onChange={e => setAnswers(p => ({ ...p, [q.id]: e.target.value }))} rows={3} placeholder="답을 입력하세요" />
+              )}
+            </div>
+          ))}
+        </div>
+
+        {left > 0 && <div className="note">아직 안 푼 문제가 <b>{left}개</b> 있습니다. 제출하면 다시 풀 수 없습니다.</div>}
+        <button className="btn leaf block big" onClick={handleSubmit} disabled={submitting}>
+          {submitting ? '제출 중...' : left > 0 ? `안 푼 문제 ${left}개 — 그래도 제출하기` : '✓ 최종 제출하기'}
         </button>
       </div>
     </div>
@@ -457,37 +484,56 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
     setUploadStep('parsing');
     setErrorMsg('');
 
+    const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
     let text = '';
+    let pdfBase64 = '';
     try {
-      if (!(window as any).JSZip) {
-        await new Promise((res, rej) => {
-          const s = document.createElement('script');
-          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-          s.onload = res; s.onerror = rej; document.head.appendChild(s);
-        });
+      if (isPdf) {
+        // PDF: 글자가 들어 있는 PDF는 브라우저에서 글자를 뽑고, 스캔(그림) PDF는 파일째 AI에게 보냄
+        text = await extractPdfText(file);
+        if (text.replace(/\s/g, '').length < 150) {
+          text = '';
+          if (file.size > 3 * 1024 * 1024) {
+            setErrorMsg('스캔된(그림) PDF는 3MB 이하만 올릴 수 있습니다. 한글에서 PDF로 다시 저장하거나 HWPX 파일을 올려 주세요.');
+            setUploadStep('error'); return;
+          }
+          pdfBase64 = await fileToBase64(file);
+        }
+      } else {
+        if (!(window as any).JSZip) {
+          await new Promise((res, rej) => {
+            const s = document.createElement('script');
+            s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+            s.onload = res; s.onerror = rej; document.head.appendChild(s);
+          });
+        }
+        const zip = await (window as any).JSZip.loadAsync(file);
+        const allFiles = Object.keys(zip.files);
+        const targets = allFiles.filter((n: string) => /section/i.test(n) && n.endsWith('.xml'));
+        const files = targets.length ? targets : allFiles.filter((n: string) => n.endsWith('.xml')).slice(0, 6);
+        const parts: string[] = [];
+        for (const f of files) {
+          const xml = await zip.files[f].async('string');
+          const t = xml.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+          if (t.length > 30) parts.push(t);
+        }
+        text = parts.join('\n\n');
       }
-      const zip = await (window as any).JSZip.loadAsync(file);
-      const allFiles = Object.keys(zip.files);
-      const targets = allFiles.filter((n: string) => /section/i.test(n) && n.endsWith('.xml'));
-      const files = targets.length ? targets : allFiles.filter((n: string) => n.endsWith('.xml')).slice(0, 6);
-      const parts: string[] = [];
-      for (const f of files) {
-        const xml = await zip.files[f].async('string');
-        const t = xml.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, ' ').trim();
-        if (t.length > 30) parts.push(t);
-      }
-      text = parts.join('\n\n').slice(0, 8000);
+      text = text.slice(0, 8000);
     } catch (err) {
-      setErrorMsg('파일 추출 실패. HWPX 형식인지 확인하세요.'); setUploadStep('error'); return;
+      setErrorMsg(isPdf
+        ? 'PDF 파일을 읽지 못했습니다. 암호가 걸린 PDF인지 확인해 주세요.'
+        : '파일 추출 실패. HWPX 형식인지 확인하세요. (.hwp 파일은 한글에서 HWPX 또는 PDF로 저장해서 올려 주세요)');
+      setUploadStep('error'); return;
     }
 
     try {
       const res = await fetch('/api/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, fileName: file.name }),
+        body: JSON.stringify(pdfBase64 ? { pdfBase64, fileName: file.name } : { text, fileName: file.name }),
       });
-      const parsed = await res.json();
+      const parsed = await res.json().catch(() => ({ error: res.status === 413 ? '파일이 너무 큽니다.' : `서버 오류 (${res.status})` }));
       if (!res.ok) throw new Error(parsed.error || 'AI 파싱 실패');
       setPreview({ ...parsed, passing_score: parsed.passingScore || parsed.passing_score || 80 });
       setUploadStep('preview');
@@ -605,12 +651,13 @@ function AdminView({ exams, onBack, onRefresh }: { exams: Exam[]; onBack: () => 
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: 22 }}>
             {uploadStep === 'idle' && (
               <>
-                <p style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: C.dark }}>📄 HWPX 또는 JSON으로 시험 등록</p>
+                <p style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 700, color: C.dark }}>📄 HWPX · PDF 또는 JSON으로 시험 등록</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div>
-                    <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: C.mid }}>방법 1 — HWPX 파일 업로드 (AI 자동 파싱)</p>
-                    <input ref={fileRef} type="file" accept=".hwpx,.hwp" onChange={handleFileUpload} style={{ display: 'none' }} />
-                    <button onClick={() => fileRef.current?.click()} style={{ padding: '10px 20px', background: C.primary, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>📁 HWPX 파일 선택</button>
+                    <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: C.mid }}>방법 1 — HWPX 또는 PDF 파일 업로드 (AI 자동 파싱)</p>
+                    <input ref={fileRef} type="file" accept=".hwpx,.hwp,.pdf,application/pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
+                    <button onClick={() => fileRef.current?.click()} style={{ padding: '10px 20px', background: C.primary, color: '#fff', border: 'none', borderRadius: 9, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>📁 HWPX · PDF 파일 선택</button>
+                    <p style={{ margin: '8px 0 0', fontSize: 12, color: C.muted }}>한글에서 저장한 PDF·스캔 PDF 모두 됩니다. 스캔 PDF는 3MB 이하만 가능합니다.</p>
                   </div>
                   <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 14 }}>
                     <p style={{ margin: '0 0 8px', fontSize: 13, fontWeight: 600, color: C.mid }}>방법 2 — JSON 직접 붙여넣기</p>

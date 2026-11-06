@@ -216,6 +216,13 @@ function ResultScreen({ exam, result, name, onHome }: { exam: Exam; result: any;
 }
 
 // ── 학생 응시 ─────────────────────────────────────────────────────────────
+// 시험 코드 맨 앞 숫자로 학년을 정함 (1P01 → 1학년, 2H11R → 2학년). 숫자로 시작하지 않으면 0(기타)
+function gradeOf(code: string): number {
+  const m = /^\s*(\d)/.exec(code || '');
+  return m ? Number(m[1]) : 0;
+}
+const GRADE_NAME: Record<number, [string, string]> = { 1: ['중1', '중학교 1학년'], 2: ['중2', '중학교 2학년'], 3: ['중3', '중학교 3학년'], 0: ['기타', '학년 구분 없는 시험'] };
+
 function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   const [step, setStep] = useState<'login' | 'already' | 'test' | 'result'>('login');
   const [name, setName] = useState('');
@@ -226,6 +233,11 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   const [error, setError] = useState('');
   const [showPassage, setShowPassage] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [grade, setGrade] = useState<number | null>(null);
+
+  // 학년 카드: 중1·중2는 항상, 중3·기타는 시험이 있을 때만
+  const gradeList = [1, 2, 3, 0].filter(g => g === 1 || g === 2 || exams.some(e => gradeOf(e.code) === g));
+  const myExams = grade === null ? [] : exams.filter(e => gradeOf(e.code) === grade);
 
   const completed = exam ? exam.questions.filter(q => answers[q.id] !== undefined && answers[q.id] !== '').length : 0;
 
@@ -301,16 +313,41 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
   );
 
   if (step === 'result' && exam && result) return (
-    <ResultScreen exam={exam} result={result} name={name} onHome={() => { setStep('login'); setAnswers({}); setResult(null); setName(''); setCode(''); }} />
+    <ResultScreen exam={exam} result={result} name={name} onHome={() => { setStep('login'); setGrade(null); setAnswers({}); setResult(null); setName(''); setCode(''); }} />
   );
 
-  if (step === 'login') return (
+  if (step === 'login' && grade === null) return (
     <div className="pp">
       <div className="wrap">
         <div className="topnav"><button onClick={onBack}>← SK선경어학원 홈</button></div>
         <header>
           <div className="kick">SK선경어학원 · 독해 재시험</div>
           <h1><span>Retest</span> 재시험 응시하기</h1>
+          <div className="sub">학년을 고르세요</div>
+        </header>
+        <div className="grades">
+          {gradeList.map(g => {
+            const n = exams.filter(e => gradeOf(e.code) === g).length;
+            return (
+              <button key={g} className="grade" onClick={() => { setGrade(g); setError(''); setCode(''); }} style={{ font: 'inherit', textAlign: 'left', cursor: 'pointer' }}>
+                <b>{GRADE_NAME[g][0]}</b>
+                <span>{GRADE_NAME[g][1]}</span>
+                <i>{n ? `재시험 ${n}개` : '준비 중'}</i>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (step === 'login') return (
+    <div className="pp">
+      <div className="wrap">
+        <div className="topnav"><button onClick={() => { setGrade(null); setError(''); }}>← 학년 선택</button></div>
+        <header>
+          <div className="kick">SK선경어학원 · 독해 재시험</div>
+          <h1><span>{GRADE_NAME[grade ?? 0][0]}</span> 재시험 응시하기</h1>
           <div className="sub">이름과 시험 코드를 입력하세요</div>
         </header>
         <div className="panel">
@@ -326,10 +363,11 @@ function StudentView({ exams, onBack }: { exams: Exam[]; onBack: () => void }) {
           <button className="btn leaf block big" onClick={handleStart}>시험 시작 →</button>
         </div>
         <div className="note">재시험은 <b>한 번만</b> 제출할 수 있습니다. 모든 문제를 풀고 맨 아래 &lsquo;최종 제출하기&rsquo;를 누르세요.</div>
-        {exams.length > 0 && (
+        {myExams.length === 0 && <p className="sub">아직 등록된 {GRADE_NAME[grade ?? 0][0]} 재시험이 없습니다.</p>}
+        {myExams.length > 0 && (
           <div className="list">
-            <div className="sec-h">등록된 시험<span>누르면 코드가 들어갑니다</span></div>
-            {exams.map(e => (
+            <div className="sec-h">{GRADE_NAME[grade ?? 0][0]} 재시험<span>누르면 코드가 들어갑니다</span></div>
+            {myExams.map(e => (
               <button key={e.id} className="exam" onClick={() => { setCode(e.code); setError(''); }}>
                 <div style={{ minWidth: 0 }}>
                   <b>{e.title}</b>
